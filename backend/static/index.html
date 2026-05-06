@@ -1,0 +1,1208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>App 2 — Accounting AI</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,300&display=swap" rel="stylesheet">
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+<style>
+  :root {
+    --bg:        #0d1117;
+    --surface:   #161b22;
+    --surface2:  #1c2333;
+    --border:    #30363d;
+    --text:      #e6edf3;
+    --text-dim:  #8b949e;
+    --teal:      #39d353;
+    --blue:      #58a6ff;
+    --amber:     #d29922;
+    --red:       #f85149;
+    --purple:    #bc8cff;
+    --radius:    10px;
+    --mono:      'DM Mono', monospace;
+    --sans:      'DM Sans', sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 14px;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* ── HEADER ── */
+  header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 14px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+  }
+
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .logo-icon {
+    width: 32px; height: 32px;
+    background: linear-gradient(135deg, #1f6feb, #39d353);
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px;
+  }
+
+  .logo-text { font-size: 15px; font-weight: 500; letter-spacing: -0.3px; }
+  .logo-sub  { font-size: 11px; color: var(--text-dim); font-family: var(--mono); }
+
+  .header-right { display: flex; align-items: center; gap: 12px; }
+
+  .status-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--teal);
+    box-shadow: 0 0 6px var(--teal);
+    animation: pulse 2s infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+
+  .status-text { font-size: 12px; color: var(--text-dim); font-family: var(--mono); }
+
+  .btn-clear {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    padding: 5px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 12px;
+    font-family: var(--sans);
+    transition: all .15s;
+  }
+  .btn-clear:hover { border-color: var(--red); color: var(--red); }
+
+  /* ── MAIN LAYOUT ── */
+  .main {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  /* ── SIDEBAR ── */
+  .sidebar {
+    width: 260px;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    overflow-y: auto;
+  }
+
+  .sidebar-section { padding: 16px; border-bottom: 1px solid var(--border); }
+  .sidebar-label {
+    font-size: 10px;
+    font-family: var(--mono);
+    color: var(--text-dim);
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+  }
+
+  .quick-btn {
+    display: block;
+    width: 100%;
+    text-align: left;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    padding: 8px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 12px;
+    font-family: var(--sans);
+    margin-bottom: 6px;
+    transition: all .15s;
+    line-height: 1.4;
+  }
+  .quick-btn:hover { border-color: var(--blue); color: var(--text); }
+  .quick-btn .q-tag {
+    display: inline-block;
+    font-size: 10px;
+    font-family: var(--mono);
+    padding: 1px 5px;
+    border-radius: 3px;
+    margin-bottom: 3px;
+  }
+  .tag-sql { background: rgba(88,166,255,.15); color: var(--blue); }
+  .tag-rag { background: rgba(188,140,255,.15); color: var(--purple); }
+  .tag-both { background: rgba(57,211,83,.15); color: var(--teal); }
+
+  .stats-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .stat-card {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px;
+    text-align: center;
+  }
+  .stat-num { font-size: 18px; font-weight: 500; color: var(--blue); font-family: var(--mono); }
+  .stat-label { font-size: 10px; color: var(--text-dim); margin-top: 2px; }
+
+/* New chat button */
+  .sidebar-newchat {
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 12px;
+  }
+  .newchat-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 8px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    font-family: var(--sans);
+    font-weight: 500;
+    transition: all .15s;
+  }
+  .newchat-btn:hover {
+    border-color: var(--blue);
+    background: rgba(88, 166, 255, 0.1);
+  }
+  .newchat-icon {
+    font-size: 16px;
+    line-height: 1;
+    color: var(--blue);
+  }
+  .newchat-toast {
+    margin-top: 6px;
+    font-size: 11px;
+    color: var(--teal);
+    font-family: var(--mono);
+    opacity: 0;
+    transition: opacity .3s;
+    text-align: center;
+  }
+  .newchat-toast.show { opacity: 1; }
+
+  /* Collapsible label */
+  .sidebar-label-collapsible {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: pointer;
+    user-select: none;
+  }
+  .sidebar-label-collapsible:hover { color: var(--text); }
+  .collapse-toggle {
+    transition: transform .2s;
+    font-size: 9px;
+  }
+  .collapse-toggle.collapsed { transform: rotate(-90deg); }
+
+  /* Conversation history list */
+  .sidebar-history { background: rgba(88, 166, 255, 0.03); }
+  .history-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    padding: 7px 9px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 12px;
+    margin-bottom: 5px;
+    transition: all .15s;
+    line-height: 1.3;
+  }
+  .history-item:hover {
+    border-color: var(--blue);
+    color: var(--text);
+  }
+  .history-num {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-dim);
+    margin-top: 1px;
+    flex-shrink: 0;
+  }
+  .history-text {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+  }
+  .history-badge {
+    font-size: 9px;
+    font-family: var(--mono);
+    padding: 1px 4px;
+    border-radius: 3px;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+
+  /* Highlight pulse for jumped-to messages */
+  @keyframes highlightPulse {
+    0%, 100% { background: var(--surface); }
+    50% { background: rgba(88, 166, 255, 0.15); }
+  }
+  .msg-highlight .msg-text {
+    animation: highlightPulse 1.6s ease;
+  }
+
+  /* Compact stats and legend */
+  .sidebar-compact { padding: 12px 16px; }
+  .compact-stats {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--text-dim);
+    font-family: var(--mono);
+  }
+  .compact-stats strong {
+    color: var(--blue);
+    font-weight: 500;
+    margin-right: 2px;
+  }
+  .cstat-divider { color: var(--border); }
+  .compact-legend {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .compact-legend .chip {
+    font-size: 10px;
+    padding: 2px 8px;
+  }
+
+  /* ── CHAT AREA ── */
+  .chat-area {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  /* Welcome screen */
+  .welcome {
+    text-align: center;
+    margin: auto;
+    padding: 40px 20px;
+    max-width: 500px;
+  }
+  .welcome-icon { font-size: 48px; margin-bottom: 16px; }
+  .welcome h2 { font-size: 22px; font-weight: 500; margin-bottom: 8px; }
+  .welcome p { color: var(--text-dim); line-height: 1.6; font-size: 14px; }
+  .pipeline-chips { display: flex; gap: 8px; justify-content: center; margin-top: 16px; flex-wrap: wrap; }
+  .chip {
+    font-size: 11px;
+    font-family: var(--mono);
+    padding: 4px 10px;
+    border-radius: 20px;
+    border: 1px solid;
+  }
+  .chip-sql   { border-color: var(--blue);   color: var(--blue); }
+  .chip-rag   { border-color: var(--purple); color: var(--purple); }
+  .chip-both  { border-color: var(--teal);   color: var(--teal); }
+
+  /* Message bubbles */
+  .msg { display: flex; gap: 12px; animation: fadeIn .2s ease; }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:none; } }
+
+  .msg-avatar {
+    width: 30px; height: 30px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px; flex-shrink: 0; margin-top: 2px;
+  }
+  .avatar-user { background: var(--surface2); border: 1px solid var(--border); }
+  .avatar-ai   { background: linear-gradient(135deg,#1f6feb,#39d353); }
+
+  .msg-body { flex: 1; min-width: 0; }
+
+  .msg-meta {
+    display: flex; align-items: center; gap: 8px; margin-bottom: 4px;
+  }
+  .msg-name { font-size: 12px; font-weight: 500; }
+  .msg-time { font-size: 11px; color: var(--text-dim); font-family: var(--mono); }
+
+  .pipeline-badge {
+    font-size: 10px;
+    font-family: var(--mono);
+    padding: 1px 6px;
+    border-radius: 3px;
+  }
+  .badge-sql  { background: rgba(88,166,255,.15); color: var(--blue); }
+  .badge-rag  { background: rgba(188,140,255,.15); color: var(--purple); }
+  .badge-both { background: rgba(57,211,83,.15); color: var(--teal); }
+
+  .msg-text {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px 14px;
+    line-height: 1.65;
+    color: var(--text);
+  }
+  .msg-user .msg-text {
+    background: var(--surface2);
+    color: var(--text);
+  }
+
+  .msg-error {
+    border-color: var(--red) !important;
+  }
+  .msg-error strong {
+    color: var(--red);
+    display: inline-block;
+    margin-bottom: 4px;
+  }
+  .error-hint {
+    font-size: 12px;
+    color: var(--text-dim);
+    line-height: 1.5;
+  }
+
+  .chart-container {
+  margin-top: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px;
+  }
+
+  .chart-header {
+  font-size: 11px;
+  font-family: var(--mono);
+  color: var(--text-dim);
+  margin-bottom: 8px;
+  letter-spacing: 0.5px;
+  }
+  
+ .chart-render {
+  width: 100%;
+  min-height: 320px;
+  }
+
+  /* SQL result table */
+  .sql-result {
+    margin-top: 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  .sql-header {
+    background: var(--surface2);
+    padding: 6px 12px;
+    font-size: 11px;
+    font-family: var(--mono);
+    color: var(--text-dim);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    border-bottom: 1px solid var(--border);
+  }
+  .sql-query-text {
+    background: var(--bg);
+    padding: 8px 12px;
+    font-size: 12px;
+    font-family: var(--mono);
+    color: var(--blue);
+    border-bottom: 1px solid var(--border);
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+  .data-table { width: 100%; border-collapse: collapse; }
+  .data-table th {
+    background: var(--surface2);
+    padding: 7px 10px;
+    font-size: 11px;
+    font-family: var(--mono);
+    color: var(--text-dim);
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  .data-table td {
+    padding: 7px 10px;
+    font-size: 12px;
+    font-family: var(--mono);
+    border-bottom: 1px solid rgba(48,54,61,0.5);
+    color: var(--text);
+    white-space: nowrap;
+  }
+  .data-table tr:last-child td { border-bottom: none; }
+  .data-table tr:hover td { background: var(--surface2); }
+
+  // Plotly chart for SQL results
+  if (data.chart_spec) {
+    const chartId = `chart-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    extra += `
+      <div class="chart-container">
+        <div class="chart-header">📈 ${escHtml(data.chart_spec.title || 'Visualization')}</div>
+        <div id="${chartId}" class="chart-render"></div>
+      </div>`;
+
+    // Render after DOM insertion (setTimeout pushes to next tick)
+    setTimeout(() => renderChart(chartId, data.chart_spec), 0);
+  }
+
+  /* RAG sources */
+  .sources {
+    margin-top: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .sources-header {
+    font-size: 11px;
+    font-family: var(--mono);
+    color: var(--text-dim);
+    margin-top: 12px;
+    margin-bottom: 6px;
+    letter-spacing: 0.5px;
+  }
+
+  .source-group {
+    margin-bottom: 8px;
+  }
+
+  .source-doc-name {
+    font-size: 11px;
+    font-family: var(--mono);
+    color: var(--purple);
+    font-weight: 500;
+    margin-bottom: 4px;
+    padding-left: 2px;
+  }
+
+  .source-item {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 7px 10px;
+    font-size: 11px;
+    font-family: var(--mono);
+    color: var(--text-dim);
+  }
+  .source-page { color: var(--purple); margin-right: 8px; }
+
+  /* Loading indicator */
+  .loading {
+    display: flex; gap: 12px; align-items: flex-start;
+  }
+  .loading-dots {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px 16px;
+    display: flex; gap: 5px; align-items: center;
+  }
+  .dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--text-dim);
+    animation: bounce .9s infinite;
+  }
+  .dot:nth-child(2) { animation-delay: .15s; }
+  .dot:nth-child(3) { animation-delay: .30s; }
+  @keyframes bounce {
+    0%,80%,100% { transform: translateY(0); opacity:.4; }
+    40%          { transform: translateY(-5px); opacity:1; }
+  }
+
+  /* ── INPUT AREA ── */
+  .input-area {
+    border-top: 1px solid var(--border);
+    padding: 16px 24px;
+    background: var(--surface);
+    flex-shrink: 0;
+  }
+
+  .input-wrap {
+    display: flex;
+    gap: 10px;
+    align-items: flex-end;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 10px 12px;
+    transition: border-color .15s;
+  }
+  .input-wrap:focus-within { border-color: var(--blue); }
+
+  textarea {
+    flex: 1;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 14px;
+    line-height: 1.5;
+    resize: none;
+    min-height: 22px;
+    max-height: 120px;
+  }
+  textarea::placeholder { color: var(--text-dim); }
+
+  .send-btn {
+    background: var(--blue);
+    border: none;
+    color: #000;
+    width: 32px; height: 32px;
+    border-radius: 6px;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+    transition: opacity .15s;
+    font-size: 14px;
+  }
+  .send-btn:hover { opacity: .85; }
+  .send-btn:disabled { opacity: .35; cursor: default; }
+
+  .input-hint {
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-top: 8px;
+    font-family: var(--mono);
+    text-align: center;
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<header>
+  <div class="logo">
+    <div class="logo-icon">📊</div>
+    <div>
+      <div class="logo-text">Accounting AI</div>
+      <div class="logo-sub">App 2 — Hybrid RAG + Text-to-SQL</div>
+    </div>
+  </div>
+  <div class="header-right">
+    <div class="status-dot" id="statusDot"></div>
+    <span class="status-text" id="statusText">connecting...</span>
+  </div>
+</header>
+
+<div class="main">
+
+<!-- SIDEBAR -->
+  <div class="sidebar">
+
+    <!-- New Chat button (always at top) -->
+    <div class="sidebar-section sidebar-newchat">
+      <button class="newchat-btn" onclick="newChat()">
+        <span class="newchat-icon">+</span>
+        <span>New chat</span>
+      </button>
+      <div class="newchat-toast" id="newchatToast">Started new chat</div>
+    </div>
+
+    <!-- Conversation history (auto-shows once history exists) -->
+    <div class="sidebar-section sidebar-history" id="historySection" style="display:none;">
+      <div class="sidebar-label">Conversation</div>
+      <div id="historyList"></div>
+    </div>
+
+    <!-- Sample questions (collapsible, auto-collapses after first question) -->
+    <div class="sidebar-section">
+      <div class="sidebar-label sidebar-label-collapsible" onclick="toggleSampleQuestions()">
+        <span>Sample questions</span>
+        <span class="collapse-toggle" id="sampleToggle">▼</span>
+      </div>
+      <div id="sampleQuestions">
+        <button class="quick-btn" onclick="sendQuestion(this.dataset.q)" data-q="What invoices are overdue by more than 60 days?">
+          <span class="q-tag tag-sql">SQL</span><br>
+          AP aging over 60 days
+        </button>
+        <button class="quick-btn" onclick="sendQuestion(this.dataset.q)" data-q="Show me revenue by service line for Q1 2026 using bar chart">
+          <span class="q-tag tag-sql">SQL</span><br>
+          Revenue by service line (bar)
+        </button>
+        <button class="quick-btn" onclick="sendQuestion(this.dataset.q)" data-q="Break down our overdue accounts payable by vendor using pie chart">
+          <span class="q-tag tag-sql">SQL</span><br>
+          Overdue AP by vendor (pie)
+        </button>
+        <button class="quick-btn" onclick="sendQuestion(this.dataset.q)" data-q="How has our cash balance changed since January? Use line chart">
+          <span class="q-tag tag-sql">SQL</span><br>
+          Cash trend (line chart)
+        </button>
+        <button class="quick-btn" onclick="sendQuestion(this.dataset.q)" data-q="What is our net income year-to-date?">
+          <span class="q-tag tag-sql">SQL</span><br>
+          Net income YTD
+        </button>
+        <button class="quick-btn" onclick="sendQuestion(this.dataset.q)" data-q="What does the IRS say about late payroll tax deposit penalties?">
+          <span class="q-tag tag-rag">RAG</span><br>
+          Late deposit penalties
+        </button>
+        <button class="quick-btn" onclick="sendQuestion(this.dataset.q)" data-q="Are employer-provided meals taxable to employees?">
+          <span class="q-tag tag-rag">RAG</span><br>
+          Fringe benefit (meals)
+        </button>
+        <button class="quick-btn" onclick="sendQuestion(this.dataset.q)" data-q="What is our overdue AP balance and what does the IRS say about late payment penalties?">
+          <span class="q-tag tag-both">BOTH</span><br>
+          Overdue AP + IRS penalty
+        </button>
+      </div>
+    </div>
+
+    <!-- Compact stats (single inline row) -->
+    <div class="sidebar-section sidebar-compact">
+      <div class="sidebar-label">Stats</div>
+      <div class="compact-stats">
+        <span class="cstat"><strong id="statTurns">—</strong> Q</span>
+        <span class="cstat-divider">·</span>
+        <span class="cstat"><strong id="statAP">—</strong> AP</span>
+        <span class="cstat-divider">·</span>
+        <span class="cstat"><strong id="statRev">—</strong> Rev</span>
+        <span class="cstat-divider">·</span>
+        <span class="cstat"><strong id="statJE">—</strong> JE</span>
+      </div>
+    </div>
+
+    <!-- Compact pipeline legend (single inline row) -->
+    <div class="sidebar-section sidebar-compact">
+      <div class="sidebar-label">Pipelines</div>
+      <div class="compact-legend">
+        <span class="chip chip-sql">SQL</span>
+        <span class="chip chip-rag">RAG</span>
+        <span class="chip chip-both">BOTH</span>
+      </div>
+    </div>
+
+  </div>
+  <!-- CHAT AREA -->
+  <div class="chat-area">
+    <div class="messages" id="messages">
+      <div class="welcome" id="welcome">
+        <div class="welcome-icon">🧮</div>
+        <h2>Accounting AI Chatbot</h2>
+        <p>Ask questions about your QuickBooks data or IRS payroll tax regulations. The system automatically routes your question to the right pipeline.</p>
+        <div class="pipeline-chips">
+          <span class="chip chip-sql">Text-to-SQL</span>
+          <span class="chip chip-rag">RAG / ChromaDB</span>
+          <span class="chip chip-both">Hybrid router</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="input-area">
+      <div class="input-wrap">
+        <textarea
+          id="questionInput"
+          placeholder="Ask about your accounting data or tax regulations..."
+          rows="1"
+          onkeydown="handleKey(event)"
+          oninput="autoResize(this)"
+        ></textarea>
+        <button class="send-btn" id="sendBtn" onclick="sendMessage()">➤</button>
+      </div>
+      <div class="input-hint">Enter to send · Shift+Enter for new line · Questions are routed automatically</div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const API = 'http://localhost:8002';
+let isLoading = false;
+
+// ── Init ──────────────────────────────────────────────────
+async function init() {
+  await checkHealth();
+  await loadStats();
+}
+
+async function checkHealth() {
+  try {
+    const r = await fetch(`${API}/health`);
+    const d = await r.json();
+    const dot = document.getElementById('statusDot');
+    const txt = document.getElementById('statusText');
+    if (d.status === 'running') {
+      dot.style.background = 'var(--teal)';
+      dot.style.boxShadow  = '0 0 6px var(--teal)';
+      txt.textContent = 'connected';
+    }
+  } catch {
+    document.getElementById('statusDot').style.background = 'var(--red)';
+    document.getElementById('statusText').textContent = 'offline';
+  }
+}
+
+async function loadStats() {
+  try {
+    const r = await fetch(`${API}/stats`);
+    const d = await r.json();
+    document.getElementById('statTurns').textContent = d.conversation_turns ?? '—';
+    document.getElementById('statAP').textContent    = d.accounts_payable_rows ?? '—';
+    document.getElementById('statRev').textContent   = d.revenue_rows ?? '—';
+    document.getElementById('statJE').textContent    = d.journal_entries_rows ?? '—';
+  } catch {}
+}
+
+// ── Send message ──────────────────────────────────────────
+async function sendMessage() {
+  const input = document.getElementById('questionInput');
+  const question = input.value.trim();
+  if (!question || isLoading) return;
+
+  hideWelcome();
+  input.value = '';
+  autoResize(input);
+  setLoading(true);
+
+  const userMsgId = appendUserMessage(question);
+  const loadingEl = appendLoading();
+
+  try {
+    const res = await fetch(`${API}/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question }),
+    });
+
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.detail || 'Server error');
+    }
+
+    const data = await res.json();
+    loadingEl.remove();
+    appendAIMessage(data);
+    addToHistorySidebar(question, data.pipeline, userMsgId);
+    await loadStats();
+
+  } catch (e) {
+    loadingEl.remove();
+    appendError(e.message);
+  }
+
+  setLoading(false);
+  scrollBottom();
+}
+
+function sendQuestion(q) {
+  document.getElementById('questionInput').value = q;
+  sendMessage();
+}
+
+// ── DOM helpers ───────────────────────────────────────────
+function hideWelcome() {
+  const w = document.getElementById('welcome');
+  if (w) w.remove();
+}
+
+function appendUserMessage(question) {
+  const now = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+  const msgId = `msg-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  const el = document.createElement('div');
+  el.className = 'msg msg-user';
+  el.id = msgId;
+  el.innerHTML = `
+    <div class="msg-avatar avatar-user">👤</div>
+    <div class="msg-body">
+      <div class="msg-meta">
+        <span class="msg-name">You</span>
+        <span class="msg-time">${now}</span>
+      </div>
+      <div class="msg-text">${escHtml(question)}</div>
+    </div>`;
+  document.getElementById('messages').appendChild(el);
+
+  // Auto-collapse sample questions after first question
+  if (conversationLog.length === 0) {
+    const samplePanel = document.getElementById('sampleQuestions');
+    const sampleToggle = document.getElementById('sampleToggle');
+    if (samplePanel) samplePanel.style.display = 'none';
+    if (sampleToggle) sampleToggle.classList.add('collapsed');
+  }
+
+  scrollBottom();
+  return msgId;
+}
+
+function appendLoading() {
+  const el = document.createElement('div');
+  el.className = 'loading';
+  el.innerHTML = `
+    <div class="msg-avatar avatar-ai">🤖</div>
+    <div class="loading-dots">
+      <div class="dot"></div><div class="dot"></div><div class="dot"></div>
+    </div>`;
+  document.getElementById('messages').appendChild(el);
+  scrollBottom();
+  return el;
+}
+
+function appendAIMessage(data) {
+  const now = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+  const pipeline = data.pipeline;
+  const badgeClass = `badge-${pipeline}`;
+  const badgeLabel = pipeline.toUpperCase();
+
+  let extra = '';
+
+  // SQL result table
+  if (data.sql && data.raw_data && data.raw_data.length > 0) {
+    const cols = data.columns;
+    const rows = data.raw_data;
+    let tableHTML = `<table class="data-table"><thead><tr>`;
+    cols.forEach(c => { tableHTML += `<th>${escHtml(c)}</th>`; });
+    tableHTML += `</tr></thead><tbody>`;
+    rows.forEach(row => {
+      tableHTML += '<tr>';
+      cols.forEach(c => { tableHTML += `<td>${escHtml(String(row[c] ?? ''))}</td>`; });
+      tableHTML += '</tr>';
+    });
+    tableHTML += '</tbody></table>';
+
+    extra += `
+      <div class="sql-result">
+        <div class="sql-header">🔧 Generated SQL</div>
+        <div class="sql-query-text">${escHtml(data.sql)}</div>
+        <div class="sql-header">📊 Query result (${rows.length} row${rows.length!==1?'s':''})</div>
+        ${tableHTML}
+      </div>`;
+  }
+
+// Plotly chart for SQL results
+  if (data.chart_spec) {
+    const chartId = `chart-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    extra += `
+      <div class="chart-container">
+        <div class="chart-header">📈 ${escHtml(data.chart_spec.title || 'Visualization')}</div>
+        <div id="${chartId}" class="chart-render"></div>
+      </div>`;
+
+    // Render after DOM insertion (setTimeout pushes to next tick)
+    setTimeout(() => renderChart(chartId, data.chart_spec), 0);
+  }
+
+// RAG sources — grouped by source document
+  if (data.sources && data.sources.length > 0) {
+    // Group by source_doc
+    const grouped = {};
+    data.sources.forEach(s => {
+      const key = s.source_doc || 'Unknown';
+      if (!grouped[key]) grouped[key] = [];
+      grouped[key].push(s);
+    });
+
+    const docCount = Object.keys(grouped).length;
+    const headerLabel = docCount > 1
+      ? `📚 Sources (${docCount} documents)`
+      : `📄 Source`;
+
+    let srcHTML = `<div class="sources-header">${headerLabel}</div><div class="sources">`;
+    for (const [docName, items] of Object.entries(grouped)) {
+      srcHTML += `<div class="source-group">
+        <div class="source-doc-name">${escHtml(docName)}</div>`;
+      items.forEach(s => {
+        srcHTML += `<div class="source-item">
+          <span class="source-page">p.${escHtml(String(s.page))}</span>
+          ${escHtml(s.preview)}…
+        </div>`;
+      });
+      srcHTML += '</div>';
+    }
+    srcHTML += '</div>';
+    extra += srcHTML;
+  }
+
+  const el = document.createElement('div');
+  el.className = 'msg';
+  el.innerHTML = `
+    <div class="msg-avatar avatar-ai">🤖</div>
+    <div class="msg-body">
+      <div class="msg-meta">
+        <span class="msg-name">Accounting AI</span>
+        <span class="msg-time">${now}</span>
+        <span class="pipeline-badge ${badgeClass}">${badgeLabel}</span>
+        <span style="font-size:11px;color:var(--text-dim)">${escHtml(data.route_explanation)}</span>
+      </div>
+      <div class="msg-text">${escHtml(data.answer)}</div>
+      ${extra}
+    </div>`;
+  document.getElementById('messages').appendChild(el);
+}
+
+function appendError(msg) {
+  // Always log full technical details to console for debugging
+  console.error('[App2 error]', msg);
+
+  // Categorize the error for friendlier user-facing copy
+  const lower = (msg || '').toLowerCase();
+  let userMsg, hint;
+
+  if (lower.includes('openai') || lower.includes('api key') || lower.includes('apikey')) {
+    userMsg = "I'm having trouble reaching the AI service right now.";
+    hint = "Please try again in a moment. If this keeps happening, check that the OPENAI_API_KEY is set.";
+  } else if (lower.includes('database') || lower.includes('sqlite') || lower.includes('not found')) {
+    userMsg = "I couldn't access the accounting database.";
+    hint = "Make sure the database file exists and the server has restarted recently.";
+  } else if (lower.includes('chroma') || lower.includes('vector')) {
+    userMsg = "I couldn't access the IRS publication index.";
+    hint = "The ChromaDB index may need to be rebuilt. Try restarting the server.";
+  } else if (lower.includes('failed to fetch') || lower.includes('networkerror') || lower.includes('connection')) {
+    userMsg = "I can't reach the server right now.";
+    hint = "Check that the FastAPI server is running on port 8002.";
+  } else {
+    userMsg = "Something went wrong while processing your question.";
+    hint = "Please try again, or rephrase your question.";
+  }
+
+  const el = document.createElement('div');
+  el.className = 'msg';
+  el.innerHTML = `
+    <div class="msg-avatar avatar-ai">⚠️</div>
+    <div class="msg-body">
+      <div class="msg-meta">
+        <span class="msg-name">Accounting AI</span>
+        <span class="msg-time">${new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</span>
+      </div>
+      <div class="msg-text msg-error">
+        <strong>${userMsg}</strong><br>
+        <span class="error-hint">${hint}</span>
+      </div>
+    </div>`;
+  document.getElementById('messages').appendChild(el);
+  scrollBottom();
+}
+
+// ── New chat (replaces old clearHistory) ──────────────────
+async function newChat() {
+  await fetch(`${API}/history`, { method: 'DELETE' });
+  document.getElementById('messages').innerHTML = '';
+  
+  // Restore welcome screen
+  const welcomeHTML = `
+    <div class="welcome" id="welcome">
+      <div class="welcome-icon">🧮</div>
+      <h2>Accounting AI Chatbot</h2>
+      <p>Ask questions about your QuickBooks data or IRS payroll tax regulations. The system automatically routes your question to the right pipeline.</p>
+      <div class="pipeline-chips">
+        <span class="chip chip-sql">Text-to-SQL</span>
+        <span class="chip chip-rag">RAG / ChromaDB</span>
+        <span class="chip chip-both">Hybrid router</span>
+      </div>
+    </div>`;
+  document.getElementById('messages').innerHTML = welcomeHTML;
+
+  // Clear history sidebar
+  conversationLog = [];
+  renderHistorySidebar();
+
+  // Show toast confirmation
+  const toast = document.getElementById('newchatToast');
+  toast.classList.add('show');
+  setTimeout(() => toast.classList.remove('show'), 2000);
+
+  // Re-expand sample questions for new chat
+  const samplePanel = document.getElementById('sampleQuestions');
+  const sampleToggle = document.getElementById('sampleToggle');
+  samplePanel.style.display = 'block';
+  sampleToggle.classList.remove('collapsed');
+
+  await loadStats();
+}
+
+// Backward-compat alias (in case anything still calls clearHistory)
+async function clearHistory() { return newChat(); }
+
+// ── Sample questions toggle ───────────────────────────────
+function toggleSampleQuestions() {
+  const panel = document.getElementById('sampleQuestions');
+  const toggle = document.getElementById('sampleToggle');
+  const isCollapsed = panel.style.display === 'none';
+  panel.style.display = isCollapsed ? 'block' : 'none';
+  toggle.classList.toggle('collapsed', !isCollapsed);
+}
+
+// ── Conversation history sidebar ──────────────────────────
+let conversationLog = [];  // { turn, question, pipeline, msgId }
+
+function addToHistorySidebar(question, pipeline, msgId) {
+  conversationLog.push({
+    turn: conversationLog.length + 1,
+    question: question,
+    pipeline: pipeline,
+    msgId: msgId,
+  });
+  renderHistorySidebar();
+}
+
+function renderHistorySidebar() {
+  const section = document.getElementById('historySection');
+  const list = document.getElementById('historyList');
+
+  if (conversationLog.length === 0) {
+    section.style.display = 'none';
+    return;
+  }
+
+  section.style.display = 'block';
+  list.innerHTML = '';
+
+  conversationLog.forEach(item => {
+    const truncated = item.question.length > 50
+      ? item.question.slice(0, 50) + '…'
+      : item.question;
+
+    const div = document.createElement('div');
+    div.className = 'history-item';
+    div.onclick = () => jumpToMessage(item.msgId);
+    div.innerHTML = `
+      <span class="history-num">${item.turn}.</span>
+      <span class="history-text">${escHtml(truncated)}</span>
+      <span class="history-badge badge-${item.pipeline}">${item.pipeline.toUpperCase()}</span>
+    `;
+    list.appendChild(div);
+  });
+}
+
+function jumpToMessage(msgId) {
+  const el = document.getElementById(msgId);
+  if (!el) return;
+  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  el.classList.add('msg-highlight');
+  setTimeout(() => el.classList.remove('msg-highlight'), 1600);
+}
+
+// ── Utils ─────────────────────────────────────────────────
+function setLoading(v) {
+  isLoading = v;
+  document.getElementById('sendBtn').disabled = v;
+}
+
+function scrollBottom() {
+  const m = document.getElementById('messages');
+  m.scrollTop = m.scrollHeight;
+}
+
+function handleKey(e) {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+}
+
+function autoResize(el) {
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+}
+
+function escHtml(s) {
+  return String(s)
+    .replace(/&/g,'&amp;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;');
+}
+
+function renderChart(elementId, spec) {
+  const el = document.getElementById(elementId);
+  if (!el || typeof Plotly === 'undefined') return;
+
+  const layout = {
+    paper_bgcolor: 'rgba(0,0,0,0)',
+    plot_bgcolor: 'rgba(0,0,0,0)',
+    font: { family: 'DM Sans, sans-serif', color: '#e6edf3', size: 12 },
+    margin: { t: 20, r: 20, b: 50, l: 60 },
+    xaxis: {
+      title: spec.x_label || '',
+      gridcolor: '#30363d',
+      zerolinecolor: '#30363d',
+      tickfont: { color: '#8b949e' },
+    },
+    yaxis: {
+      title: spec.y_label || '',
+      gridcolor: '#30363d',
+      zerolinecolor: '#30363d',
+      tickfont: { color: '#8b949e' },
+    },
+    showlegend: spec.type === 'line' || spec.type === 'pie',
+    legend: { font: { color: '#e6edf3' } },
+  };
+
+  let traces = [];
+
+  if (spec.type === 'bar') {
+    traces = [{
+      type: 'bar',
+      x: spec.x,
+      y: spec.y,
+      marker: { color: '#58a6ff' },
+    }];
+  } else if (spec.type === 'pie') {
+    traces = [{
+      type: 'pie',
+      labels: spec.labels,
+      values: spec.values,
+      marker: {
+        colors: ['#58a6ff', '#39d353', '#bc8cff', '#d29922', '#f85149', '#39c5cf'],
+      },
+      textfont: { color: '#e6edf3' },
+    }];
+    // Pie charts don't use x/y axes
+    delete layout.xaxis;
+    delete layout.yaxis;
+  } else if (spec.type === 'line') {
+    traces = spec.series.map((s, i) => ({
+      type: 'scatter',
+      mode: 'lines+markers',
+      name: s.name,
+      x: s.x,
+      y: s.y,
+      line: { color: ['#58a6ff', '#39d353', '#bc8cff', '#d29922'][i % 4] },
+    }));
+  }
+
+  Plotly.newPlot(el, traces, layout, {
+    displayModeBar: false,
+    responsive: true,
+  });
+}
+
+init();
+</script>
+</body>
+</html>
