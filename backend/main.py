@@ -1,26 +1,12 @@
 """
 =============================================================
-FASTAPI BACKEND — App 2 Accounting AI Chatbot
+CoReckoner — FastAPI Backend  (Phase 3 close-out)
 =============================================================
 
-Single server that connects:
-  - Query Router     (classifies each question)
-  - SQL Pipeline     (structured QuickBooks data)
-  - RAG Pipeline     (IRS Publication 15 documents)
-  - Conversation Memory (multi-turn context)
-
-Endpoints:
-  POST /chat          → main chat endpoint
-  GET  /health        → server status check
-  GET  /history       → conversation history
-  DELETE /history     → clear conversation
-  GET  /schema        → show database tables
-  GET  /stats         → collection stats
-
-Run with:
-  uvicorn main:app --reload --port 8000
-
-Then open: http://localhost:8000
+Phase 3 close-out:
+  - DELETE /sessions/{id} now also deletes the per-session SQLite DB file
+    at outputs/sessions/{id}.db.
+  - ChromaDB vector cleanup left as a stub for the PDF step.
 """
 
 import os
@@ -34,73 +20,68 @@ from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
-from httpcore import request
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
 from langchain_openai import ChatOpenAI
 
-# Local modules
 from routers.query_router import classify_question
+from routers.upload_router import router as upload_router
 from pipelines.sql_pipeline import run_sql_pipeline, get_db_connection, get_schema
 from pipelines.rag_pipeline import run_rag_pipeline
 
+from db.session_store import (
+    init_db,
+    create_session,
+    get_all_sessions,
+    get_session,
+    get_session_with_messages,
+    delete_session,
+    save_message,
+    save_artifact,
+    update_session_title,
+    touch_session,
+)
+from uploads.session_db import delete_session_db
+
 load_dotenv()
 
-# ── Paths — adjust if your folder structure differs ───────
 PROJECT_ROOT = Path(__file__).parent.parent
 DB_PATH      = PROJECT_ROOT / "outputs" / "accounting.db"
 CHROMA_DIR   = PROJECT_ROOT / "outputs" / "chroma_db"
 
-# In-memory conversation history (per server session)
-# Each entry: {question, answer, pipeline, sql, raw_data, columns, chart_spec, sources, timestamp, route_explanation}
-conversation_history = []
 
-# How many recent exchanges to feed into router/pipelines for context resolution
-HISTORY_WINDOW = 3
-
-
-# ── Startup / shutdown ─────────────────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Validate required resources on startup."""
-    print("\n" + "═" * 50)
-    print("  App 2 — Accounting AI Chatbot")
-    print("  FastAPI Backend starting...")
-    print("═" * 50)
+    print("\n" + "═" * 52)
+    print("  CoReckoner — Accounting AI Chatbot")
+    print("  Phase 3 close-out: uploads + cascade + nudge")
+    print("═" * 52)
+    try:
+        init_db()
+        print("  ✓ coreckoner.db initialised")
+    except Exception as e:
+        print(f"  ⚠ coreckoner.db init failed: {e}")
 
     if not os.getenv("OPENAI_API_KEY"):
-        print("  ❌ OPENAI_API_KEY not found in .env")
+        print("  ❌ OPENAI_API_KEY not found")
     else:
         print("  ✓ OpenAI API key loaded")
 
-    if DB_PATH.exists():
-        print(f"  ✓ SQLite DB found: {DB_PATH.name}")
-    else:
-        print(f"  ⚠ SQLite DB not found at: {DB_PATH}")
-        print(f"    Run phase1_load.py in session 6. text2sq first")
-
-    if CHROMA_DIR.exists():
-        print(f"  ✓ ChromaDB found: {CHROMA_DIR}")
-    else:
-        print(f"  ⚠ ChromaDB not found at: {CHROMA_DIR}")
-        print(f"    Run phase1_ingest.py in session 6. ChromaDB first")
-
-    print("═" * 50)
-    print(f"  Chat UI: http://localhost:8000")
-    print(f"  API docs: http://localhost:8000/docs")
-    print("═" * 50 + "\n")
-
-    yield  # server runs here
-
-    print("\nShutting down App 2 backend.")
+    print(f"  {'✓' if DB_PATH.exists() else '⚠'} accounting.db  {'found' if DB_PATH.exists() else 'NOT found'}")
+    print(f"  {'✓' if CHROMA_DIR.exists() else '⚠'} chroma_db     {'found' if CHROMA_DIR.exists() else 'NOT found'}")
+    print("═" * 52)
+    print("  Chat UI:  http://localhost:8002")
+    print("  API docs: http://localhost:8002/docs")
+    print("═" * 52 + "\n")
+    yield
+    print("\nShutting down CoReckoner.")
 
 
-# ── FastAPI app ────────────────────────────────────────────
 app = FastAPI(
-    title="App 2 — Accounting AI Chatbot",
-    description="Hybrid RAG + Text-to-SQL accounting assistant",
-    version="1.0.0",
+    title="CoReckoner — Accounting AI Chatbot",
+    description="Hybrid RAG + Text-to-SQL with persistent sessions and uploads",
+    version="2.4.0",
     lifespan=lifespan,
 )
 
@@ -111,116 +92,138 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Serve static files (the chat UI)
+app.include_router(upload_router)
+
 static_dir = PROJECT_ROOT / "backend" / "static"
 static_dir.mkdir(exist_ok=True)
 app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
 
-# ── Request / Response models ──────────────────────────────
+# ── Models ─────────────────────────────────────────────────
+
 class ChatRequest(BaseModel):
-    question: str
-    use_memory: bool = True
+    question:   str
+    session_id: Optional[str] = None
 
 
 class ChatResponse(BaseModel):
-    question: str
-    answer: str
-    pipeline: str          # "sql", "rag", or "both"
+    session_id:        str
+    question:          str
+    answer:            str
+    pipeline:          str
+    response_type:     str
+    chart_hint:        str
     route_explanation: str
-    sql: Optional[str] = None
-    raw_data: Optional[list] = None
-    columns: Optional[list] = None
-    chart_spec: Optional[dict] = None    # ← ADD THIS LINE
-    sources: Optional[list] = None
-    timestamp: str
+    sql:               Optional[str]  = None
+    raw_data:          Optional[list] = None
+    columns:           Optional[list] = None
+    sources:           Optional[list] = None
+    timestamp:         str
 
 
-# ── Helper: initialize LLM ────────────────────────────────
+class SessionRenameRequest(BaseModel):
+    title: str
+
+
 def get_llm() -> ChatOpenAI:
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
         raise HTTPException(status_code=500, detail="OPENAI_API_KEY not configured")
-    return ChatOpenAI(
-        model="gpt-4o-mini",
-        temperature=0,
-        openai_api_key=api_key,
-    )
+    return ChatOpenAI(model="gpt-4o-mini", temperature=0, openai_api_key=api_key)
 
-def get_recent_context(n: int = HISTORY_WINDOW) -> str:
-    """
-    Format the last n exchanges as plain text for prompt injection.
-    Returns empty string if no prior history.
 
-    Used to give the router and SQL pipeline awareness of prior turns
-    so follow-up questions like "show me the top 3 from those" can resolve.
-    """
-    if not conversation_history:
-        return ""
+def _try_save_message(session_id, role, content, pipeline_used=None) -> str | None:
+    try:
+        return save_message(session_id, role, content, pipeline_used)
+    except Exception as e:
+        print(f"[session_store] save_message failed: {e}")
+        return None
 
-    recent = conversation_history[-n:]
-    lines = []
-    for i, entry in enumerate(recent, 1):
-        q = entry.get("question", "")
-        a = entry.get("answer", "")
-        # Truncate long answers to keep prompt size manageable
-        if len(a) > 400:
-            a = a[:400] + "..."
-        lines.append(f"Turn {i}:\nUser: {q}\nAssistant: {a}")
 
-    return "\n\n".join(lines)
+def _try_save_artifact(message_id, artifact_type, content) -> None:
+    if not message_id:
+        return
+    try:
+        save_artifact(message_id, artifact_type, content)
+    except Exception as e:
+        print(f"[session_store] save_artifact failed ({artifact_type}): {e}")
 
-# ── MAIN CHAT ENDPOINT ─────────────────────────────────────
+
+def _try_touch(session_id) -> None:
+    try:
+        touch_session(session_id)
+    except Exception:
+        pass
+
+
+# ── CHAT ENDPOINT ──────────────────────────────────────────
+
 @app.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):
-    """
-    The core endpoint. Flow:
-      1. Classify question → SQL or RAG or BOTH
-      2. Run appropriate pipeline(s)
-      3. If BOTH: merge answers
-      4. Save to conversation memory
-      5. Return structured response
-    """
     question = request.question.strip()
     if not question:
         raise HTTPException(status_code=400, detail="Question cannot be empty")
 
-    llm = get_llm()
     timestamp = datetime.now().isoformat()
+    llm       = get_llm()
 
-    # Get recent conversation context for follow-up resolution
-    history_context = get_recent_context() if request.use_memory else ""
+    session_id     = request.session_id
+    is_new_session = not session_id
 
-    # Step 1: Route the question (with history awareness)
-    route_result = classify_question(question, llm, history=history_context)
-    route = route_result["route"]
+    if session_id:
+        try:
+            if not get_session(session_id):
+                session_id = None
+        except Exception:
+            session_id = None
 
-    sql_result = {}
-    rag_result = {}
-    final_answer = ""
+    if not session_id:
+        try:
+            sess       = create_session(title=question[:80])
+            session_id = sess["session_id"]
+        except Exception:
+            import uuid
+            session_id = str(uuid.uuid4())
+
+    _try_save_message(session_id, "user", question)
+    if is_new_session:
+        try:
+            update_session_title(session_id, question[:80])
+        except Exception:
+            pass
+
+    route_result = classify_question(question, llm)
+    route        = route_result["route"]
+
+    sql_result    = {}
+    rag_result    = {}
+    final_answer  = ""
     pipeline_used = route
+    response_type = "answer"
+    chart_hint    = "none"
 
-    # Step 2: Run pipeline(s) — pass history for follow-up context
     try:
         if route in ("sql", "both"):
-            sql_result = run_sql_pipeline(question, llm, DB_PATH, history=history_context)
+            sql_result = run_sql_pipeline(question, llm, DB_PATH, session_id=session_id)
+            response_type = sql_result.get("response_type", "answer")
+            chart_hint    = sql_result.get("chart_hint", "none")
 
         if route in ("rag", "both"):
-            rag_result = run_rag_pipeline(question, llm, CHROMA_DIR, history=history_context)
+            rag_result = run_rag_pipeline(question, llm, CHROMA_DIR)
+            if route == "rag":
+                response_type = rag_result.get("response_type", "answer")
 
-    # Step 3: Merge if BOTH
         if route == "both":
             sql_ans = sql_result.get("answer", "")
             rag_ans = rag_result.get("answer", "")
-
-            merge_prompt = f"""Combine these two answers into one clear response:
-
-DATA ANSWER: {sql_ans}
-POLICY ANSWER: {rag_ans}
-
-Write a unified 3-5 sentence answer that addresses both the numbers and the policy context."""
-            merged = llm.invoke(merge_prompt)
-            final_answer = merged.content.strip()
+            merge   = llm.invoke(
+                f"Combine these two answers into one clear response:\n\n"
+                f"DATA ANSWER: {sql_ans}\n"
+                f"POLICY ANSWER: {rag_ans}\n\n"
+                f"Write a unified 3-5 sentence answer addressing both numbers and policy context."
+            )
+            final_answer  = merge.content.strip()
+            response_type = "answer"
         elif route == "sql":
             final_answer = sql_result.get("answer", "No answer generated.")
         else:
@@ -231,61 +234,139 @@ Write a unified 3-5 sentence answer that addresses both the numbers and the poli
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Pipeline error: {str(e)}")
 
-    # Step 4: Save to memory and history
- 
-    entry = {
-        "question": question,
-        "answer": final_answer,
-        "pipeline": pipeline_used,
-        "route_explanation": route_result["explanation"],
-        "sql": sql_result.get("sql"),
-        "raw_data": sql_result.get("raw_data", []),
-        "columns": sql_result.get("columns", []),
-        "chart_spec": sql_result.get("chart_spec"),    # ← ADD THIS LINE
-        "sources": rag_result.get("sources", []),
-        "timestamp": timestamp,
-        }
-    
-    conversation_history.append(entry)
+    asst_msg_id = _try_save_message(
+        session_id, "assistant", final_answer, pipeline_used
+    )
 
-    return ChatResponse(**entry)
+    if asst_msg_id:
+        _try_save_artifact(asst_msg_id, "route_explanation", route_result["explanation"])
+        _try_save_artifact(asst_msg_id, "response_type", response_type)
+        if sql_result.get("sql"):
+            _try_save_artifact(asst_msg_id, "sql_query", sql_result["sql"])
+        if sql_result.get("raw_data"):
+            _try_save_artifact(asst_msg_id, "sql_result", {
+                "columns": sql_result.get("columns", []),
+                "rows":    sql_result.get("raw_data", []),
+            })
+        if rag_result.get("sources"):
+            _try_save_artifact(asst_msg_id, "citations", rag_result["sources"])
+        if chart_hint != "none" and sql_result.get("raw_data"):
+            _try_save_artifact(asst_msg_id, "chart_spec", {
+                "chart_type": chart_hint,
+                "columns":    sql_result.get("columns", []),
+                "rows":       sql_result.get("raw_data", []),
+                "question":   question,
+            })
+
+    _try_touch(session_id)
+
+    return ChatResponse(
+        session_id        = session_id,
+        question          = question,
+        answer            = final_answer,
+        pipeline          = pipeline_used,
+        response_type     = response_type,
+        chart_hint        = chart_hint,
+        route_explanation = route_result["explanation"],
+        sql               = sql_result.get("sql"),
+        raw_data          = sql_result.get("raw_data", []),
+        columns           = sql_result.get("columns", []),
+        sources           = rag_result.get("sources", []),
+        timestamp         = timestamp,
+    )
+
+
+# ── SESSION ENDPOINTS ──────────────────────────────────────
+
+@app.get("/sessions")
+async def list_sessions():
+    try:
+        sessions = get_all_sessions()
+        return {"sessions": sessions, "count": len(sessions)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/sessions")
+async def new_session():
+    try:
+        return create_session(title="New Chat")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/sessions/{session_id}")
+async def get_full_session(session_id: str):
+    try:
+        session = get_session_with_messages(session_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return session
+
+
+@app.patch("/sessions/{session_id}")
+async def rename_session(session_id: str, body: SessionRenameRequest):
+    """Rename a session — called when user edits the title in the sidebar."""
+    if not body.title or not body.title.strip():
+        raise HTTPException(status_code=400, detail="Title cannot be empty")
+    try:
+        existing = get_session(session_id)
+        if not existing:
+            raise HTTPException(status_code=404, detail="Session not found")
+        update_session_title(session_id, body.title.strip())
+        return {"session_id": session_id, "title": body.title.strip()}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/sessions/{session_id}")
+async def remove_session(session_id: str):
+    """
+    Delete a session and cascade cleanup:
+      1. coreckoner.db rows (sessions + messages + artifacts + uploads — via FK)
+      2. Per-session SQLite DB file at outputs/sessions/{id}.db
+      3. (TODO) Per-session ChromaDB vectors — wired in the PDF step
+    """
+    try:
+        deleted = delete_session(session_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    # Cascade: remove the per-session SQLite DB file (if any)
+    try:
+        delete_session_db(session_id)
+    except Exception as e:
+        # Non-fatal — the session row is already gone, just log.
+        print(f"[main] cascade: delete_session_db failed for {session_id}: {e}")
+
+    # TODO (PDF step): also delete ChromaDB vectors where metadata.session_id == session_id
+
+    return {"status": "deleted", "session_id": session_id}
 
 
 # ── SUPPORTING ENDPOINTS ───────────────────────────────────
+
 @app.get("/health")
 async def health():
-    """Check server and pipeline status."""
     return {
-        "status": "running",
-        "db_connected": DB_PATH.exists(),
+        "status":           "running",
+        "db_connected":     DB_PATH.exists(),
         "chroma_connected": CHROMA_DIR.exists(),
-        "api_key_set": bool(os.getenv("OPENAI_API_KEY")),
-        "conversation_turns": len(conversation_history),
+        "api_key_set":      bool(os.getenv("OPENAI_API_KEY")),
+        "persistence":      (PROJECT_ROOT / "outputs" / "coreckoner.db").exists(),
     }
-
-
-@app.get("/history")
-async def get_history():
-    """Return full conversation history."""
-    return {
-        "count": len(conversation_history),
-        "history": conversation_history,
-    }
-
-
-@app.delete("/history")
-async def clear_history():
-    """Clear conversation history."""
-    global conversation_history
-    conversation_history = []
-    return {"status": "cleared"}
 
 
 @app.get("/schema")
 async def get_db_schema():
-    """Return database schema — useful for debugging."""
     if not DB_PATH.exists():
-        raise HTTPException(status_code=503, detail="Database not found")
+        raise HTTPException(status_code=503, detail="accounting.db not found")
     conn = get_db_connection(DB_PATH)
     schema = get_schema(conn)
     conn.close()
@@ -294,35 +375,32 @@ async def get_db_schema():
 
 @app.get("/stats")
 async def get_stats():
-    """Return pipeline statistics."""
-    stats = {
-        "conversation_turns": len(conversation_history),
-        "db_exists": DB_PATH.exists(),
-        "chroma_exists": CHROMA_DIR.exists(),
-    }
-
+    stats = {"db_exists": DB_PATH.exists(), "chroma_exists": CHROMA_DIR.exists()}
     if DB_PATH.exists():
         conn = sqlite3.connect(str(DB_PATH))
         cursor = conn.cursor()
-        for table in ["accounts_payable", "revenue", "journal_entries"]:
+        for table in ["accounts_payable", "revenue", "journal_entries",
+                      "balance_sheet", "profit_loss", "accounts_receivable",
+                      "general_ledger", "chart_of_accounts"]:
             try:
                 cursor.execute(f"SELECT COUNT(*) FROM {table}")
                 stats[f"{table}_rows"] = cursor.fetchone()[0]
             except Exception:
                 pass
         conn.close()
-
+    try:
+        stats["session_count"] = len(get_all_sessions())
+    except Exception:
+        stats["session_count"] = 0
     return stats
 
 
-# ── SERVE CHAT UI ──────────────────────────────────────────
 @app.get("/", response_class=HTMLResponse)
 async def serve_ui():
-    """Serve the chat interface."""
     ui_path = static_dir / "index.html"
     if ui_path.exists():
         return FileResponse(str(ui_path))
-    return HTMLResponse("<h2>Chat UI not found. Place index.html in static/</h2>")
+    return HTMLResponse("<h2>Chat UI not found.</h2>")
 
 
 if __name__ == "__main__":

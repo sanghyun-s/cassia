@@ -1,0 +1,37 @@
+account_code,account_name,category,january_2026,february_2026,march_2026,april_2026,ytd_total,prior_year_q1
+4000,Audit Services Revenue,Revenue,22000.00,41500.00,57000.00,50500.00,171000.00,148000.00
+4010,Tax Preparation Revenue,Revenue,8200.00,8200.00,0.00,0.00,16400.00,22000.00
+4020,Accounting Services Revenue,Revenue,21900.00,12500.00,21300.00,12500.00,68200.00,52000.00
+4030,Consulting Revenue,Revenue,73000.00,83000.00,92500.00,97000.00,345500.00,280000.00
+4040,Bookkeeping Revenue,Revenue,9400.00,0.00,0.00,0.00,9400.00,8800.00
+4050,Payroll Services Revenue,Revenue,0.00,0.00,0.00,0.00,0.00,6000.00
+4060,CFO Advisory Revenue,Revenue,0.00,0.00,0.00,0.00,0.00,0.00
+4900,Interest Income,Revenue,380.00,395.00,408.00,420.00,1603.00,820.00
+total_revenue,Total Revenue,Revenue,134880.00,145595.00,171208.00,160420.00,612103.00,517620.00
+5000,Salaries - Professional Staff,Cost of Services,68000.00,68000.00,68000.00,68000.00,272000.00,240000.00
+5010,Salaries - Administrative,Cost of Services,18000.00,18000.00,18000.00,18000.00,72000.00,68000.00
+5020,Payroll Taxes - Employer,Cost of Services,6579.00,6579.00,6579.00,6579.00,26316.00,24480.00
+5030,Employee Benefits,Cost of Services,8200.00,8200.00,8200.00,8200.00,32800.00,30400.00
+5040,Contract Labor,Cost of Services,0.00,4500.00,8000.00,12000.00,24500.00,18000.00
+total_cos,Total Cost of Services,Cost of Services,100779.00,105279.00,108779.00,112779.00,427616.00,380880.00
+gross_profit,Gross Profit,Gross Profit,34101.00,40316.00,62429.00,47641.00,184487.00,136740.00
+gross_margin_pct,Gross Margin %,Gross Profit,25.3%,27.7%,36.5%,29.7%,30.1%,26.4%
+5100,Rent Expense,Operating Expense,5500.00,5500.00,5500.00,5500.00,22000.00,22000.00
+5110,Utilities,Operating Expense,820.00,790.00,840.00,810.00,3260.00,3100.00
+5120,Office Supplies,Operating Expense,420.00,380.00,290.00,340.00,1430.00,1600.00
+5130,Software Subscriptions,Operating Expense,3800.00,4200.00,4200.00,3800.00,16000.00,12400.00
+5140,Professional Development,Operating Expense,0.00,0.00,4200.00,0.00,4200.00,3800.00
+5150,Professional Liability Insurance,Operating Expense,1500.00,1500.00,1500.00,1500.00,6000.00,6000.00
+5160,Marketing and Advertising,Operating Expense,0.00,1200.00,0.00,6500.00,7700.00,4200.00
+5170,Meals and Entertainment,Operating Expense,680.00,920.00,1100.00,840.00,3540.00,2800.00
+5180,Travel,Operating Expense,0.00,1450.00,2200.00,0.00,3650.00,4100.00
+5190,Telephone,Operating Expense,380.00,380.00,380.00,380.00,1520.00,1440.00
+5200,Depreciation Expense,Operating Expense,1458.00,1458.00,1458.00,1458.00,5832.00,5400.00
+5220,Bank Charges,Operating Expense,145.00,138.00,152.00,161.00,596.00,520.00
+5230,Dues and Subscriptions,Operating Expense,0.00,0.00,2800.00,0.00,2800.00,2600.00
+5240,Bad Debt Expense,Operating Expense,0.00,0.00,2800.00,0.00,2800.00,1200.00
+total_opex,Total Operating Expenses,Operating Expense,14703.00,17916.00,27420.00,21289.00,81328.00,71160.00
+ebitda,EBITDA,EBITDA,20856.00,23858.00,36467.00,27810.00,108991.00,67980.00
+5300,Interest Expense,Other Expense,1875.00,1875.00,1875.00,1875.00,7500.00,7800.00
+net_income,Net Income,Net Income,18981.00,21983.00,34592.00,25935.00,101491.00,57540.00
+net_margin_pct,Net Margin %,Net Income,14.1%,15.1%,20.2%,16.2%,16.6%,11.1%

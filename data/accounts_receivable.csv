@@ -1,0 +1,15 @@
+invoice_id,client_name,invoice_date,due_date,invoice_amount,paid_amount,balance_due,days_outstanding,aging_bucket,service_type,billing_partner,notes
+AR-2026-001,Zenith Software,2026-04-08,2026-05-08,55000.00,0.00,55000.00,26,Current,Consulting,Mike R,Q2 advisory retainer
+AR-2026-002,Valley Medical Group,2026-04-10,2026-05-10,28500.00,0.00,28500.00,24,Current,Audit,Mike R,Spring audit engagement
+AR-2026-003,Westside Developers,2026-04-12,2026-05-12,42000.00,0.00,42000.00,22,Current,Consulting,Sarah K,April advisory fees
+AR-2026-004,Apex Manufacturing,2026-04-01,2026-05-01,12500.00,0.00,12500.00,29,Current,Accounting Services,Sarah K,April monthly retainer
+AR-2026-005,Crest Healthcare,2026-04-05,2026-05-05,22000.00,0.00,22000.00,25,Current,Audit,Mike R,Q2 audit progress billing
+AR-2026-006,BlueStar Retail,2026-03-15,2026-04-14,8200.00,0.00,8200.00,46,31-60 Days,Tax Preparation,James L,2025 tax return filing
+AR-2026-007,Quest Solutions,2026-03-12,2026-04-11,16500.00,0.00,16500.00,49,31-60 Days,Consulting,Sarah K,March consulting fees
+AR-2026-008,Pacific Shipping,2026-03-10,2026-04-09,8800.00,0.00,8800.00,51,31-60 Days,Accounting Services,Amy C,March accounting services
+AR-2026-009,Frontier Tech,2026-03-22,2026-04-21,31000.00,0.00,31000.00,39,31-60 Days,Consulting,Sarah K,March advisory - partial unpaid
+AR-2026-010,NorthStar Energy,2026-02-18,2026-03-20,19500.00,0.00,19500.00,75,61-90 Days,Audit,Mike R,February audit - payment delayed
+AR-2026-011,Liberty Insurance,2026-02-18,2026-03-20,28000.00,14000.00,14000.00,75,61-90 Days,Consulting,Sarah K,Partial payment received Feb consulting
+AR-2026-012,Titan Wholesale,2026-01-12,2026-02-11,9400.00,0.00,9400.00,112,90+ Days,Bookkeeping,Amy C,Disputed invoice - services rendered
+AR-2026-013,Union Pacific Foods,2026-01-08,2026-02-07,6800.00,4000.00,2800.00,116,90+ Days,Tax Preparation,James L,Partial collect - bad debt likely
+AR-2026-014,KLM Restaurants,2025-12-15,2026-01-14,4800.00,0.00,4800.00,140,90+ Days,Tax Preparation,James L,Non-responsive - collections engaged

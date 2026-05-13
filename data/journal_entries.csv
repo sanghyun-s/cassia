@@ -1,0 +1,39 @@
+entry_id,date,account_code,account_name,debit,credit,description,reference
+JE-001,2026-01-31,1000,Cash,125000.00,,January client payments received,REV-Jan-Batch
+JE-002,2026-01-31,1200,Accounts Receivable,,125000.00,Clear AR for January payments,REV-Jan-Batch
+JE-003,2026-01-31,6000,Rent Expense,5500.00,,January office rent - WeWork,INV-016
+JE-004,2026-01-31,2000,Accounts Payable,,5500.00,Record WeWork January invoice,INV-016
+JE-005,2026-01-31,6100,Utilities Expense,925.00,,January AT&T bill,INV-017
+JE-006,2026-01-31,2000,Accounts Payable,,925.00,Record AT&T January invoice,INV-017
+JE-007,2026-01-31,6200,Software Expense,3500.00,,January AWS invoice,INV-018
+JE-008,2026-01-31,2000,Accounts Payable,,3500.00,Record AWS January invoice,INV-018
+JE-009,2026-01-31,6200,Software Expense,800.00,,January Zoom subscription,INV-019
+JE-010,2026-01-31,2000,Accounts Payable,,800.00,Record Zoom January invoice,INV-019
+JE-011,2026-01-31,6300,Office Supplies,360.00,,January Staples purchase,INV-020
+JE-012,2026-01-31,2000,Accounts Payable,,360.00,Record Staples January invoice,INV-020
+JE-013,2026-02-28,1000,Cash,142500.00,,February client payments received,REV-Feb-Batch
+JE-014,2026-02-28,1200,Accounts Receivable,,142500.00,Clear AR for February payments,REV-Feb-Batch
+JE-015,2026-02-28,6000,Rent Expense,5500.00,,February office rent - WeWork,INV-021
+JE-016,2026-02-28,2000,Accounts Payable,,5500.00,Record WeWork February invoice,INV-021
+JE-017,2026-02-28,6400,Equipment Expense,12000.00,,February Dell equipment purchase,INV-022
+JE-018,2026-02-28,2000,Accounts Payable,,12000.00,Record Dell February invoice,INV-022
+JE-019,2026-02-28,6200,Software Expense,1800.00,,February Adobe subscription,INV-023
+JE-020,2026-02-28,2000,Accounts Payable,,1800.00,Record Adobe February invoice,INV-023
+JE-021,2026-02-28,6100,Utilities Expense,780.00,,February Verizon bill,INV-024
+JE-022,2026-02-28,2000,Accounts Payable,,780.00,Record Verizon February invoice,INV-024
+JE-023,2026-03-31,1000,Cash,178500.00,,March client payments received,REV-Mar-Batch
+JE-024,2026-03-31,1200,Accounts Receivable,,178500.00,Clear AR for March payments,REV-Mar-Batch
+JE-025,2026-03-31,6000,Rent Expense,5500.00,,March office rent - WeWork,INV-026
+JE-026,2026-03-31,2000,Accounts Payable,,5500.00,Record WeWork March invoice,INV-026
+JE-027,2026-03-31,6200,Software Expense,4200.00,,March Salesforce subscription,INV-027
+JE-028,2026-03-31,2000,Accounts Payable,,4200.00,Record Salesforce March invoice,INV-027
+JE-029,2026-03-31,6200,Software Expense,1100.00,,March Google Workspace,INV-028
+JE-030,2026-03-31,2000,Accounts Payable,,1100.00,Record Google Workspace March invoice,INV-028
+JE-031,2026-03-31,6300,Office Supplies,750.00,,March Office Depot supplies,INV-029
+JE-032,2026-03-31,2000,Accounts Payable,,750.00,Record Office Depot March invoice,INV-029
+JE-033,2026-04-30,6000,Rent Expense,5500.00,,April office rent - WeWork,INV-031
+JE-034,2026-04-30,2000,Accounts Payable,,5500.00,Record WeWork April invoice,INV-031
+JE-035,2026-04-30,6100,Utilities Expense,925.00,,April AT&T bill,INV-032
+JE-036,2026-04-30,2000,Accounts Payable,,925.00,Record AT&T April invoice,INV-032
+JE-037,2026-04-30,6200,Software Expense,3800.00,,April AWS invoice,INV-033
+JE-038,2026-04-30,2000,Accounts Payable,,3800.00,Record AWS April invoice,INV-033

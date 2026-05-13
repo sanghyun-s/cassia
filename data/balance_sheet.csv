@@ -1,0 +1,29 @@
+account_code,account_name,account_type,account_subtype,jan_31_2026,feb_28_2026,mar_31_2026,apr_30_2026,prior_year_dec_31_2025
+1000,Cash - Operating,Asset,Current Asset,208300.00,219300.00,263600.00,294820.00,210000.00
+1010,Cash - Payroll,Asset,Current Asset,12000.00,12000.00,12000.00,12000.00,12000.00
+1020,Petty Cash,Asset,Current Asset,500.00,500.00,500.00,500.00,500.00
+1100,Accounts Receivable,Asset,Current Asset,125200.00,147700.00,131500.00,254500.00,87500.00
+1110,Allowance for Doubtful Accounts,Asset,Current Asset,-1800.00,-1800.00,-4600.00,-4600.00,-1800.00
+1200,Unbilled Revenue (WIP),Asset,Current Asset,18500.00,22000.00,15000.00,28000.00,18500.00
+1300,Prepaid Insurance,Asset,Current Asset,16500.00,15000.00,13500.00,12000.00,0.00
+1310,Prepaid Rent,Asset,Current Asset,0.00,0.00,0.00,0.00,0.00
+1320,Prepaid Software Subscriptions,Asset,Current Asset,2400.00,1800.00,1200.00,600.00,3000.00
+1400,Employee Advances,Asset,Current Asset,1500.00,1500.00,0.00,0.00,1500.00
+1500,Office Equipment,Asset,Fixed Asset,48000.00,48000.00,48000.00,48000.00,48000.00
+1510,Furniture and Fixtures,Asset,Fixed Asset,22000.00,22000.00,22000.00,22000.00,22000.00
+1520,Leasehold Improvements,Asset,Fixed Asset,35000.00,35000.00,35000.00,35000.00,35000.00
+1590,Accumulated Depreciation,Asset,Fixed Asset,-19958.00,-21416.00,-22874.00,-24332.00,-18500.00
+1600,Security Deposit,Asset,Other Asset,15000.00,15000.00,15000.00,15000.00,15000.00
+2000,Accounts Payable,Liability,Current Liability,-15300.00,-18700.00,-14200.00,-18500.00,-28400.00
+2010,Accrued Salaries,Liability,Current Liability,-86000.00,-86000.00,-86000.00,-86000.00,-86000.00
+2020,Accrued Payroll Taxes,Liability,Current Liability,-8653.00,-8653.00,-8653.00,-8653.00,-8400.00
+2030,Accrued PTO,Liability,Current Liability,-22000.00,-22000.00,-24000.00,-24000.00,-20000.00
+2050,Deferred Revenue,Liability,Current Liability,-15000.00,-12000.00,-9000.00,-6000.00,-18000.00
+2100,Federal Income Tax Payable,Liability,Current Liability,-8200.00,-16400.00,-24600.00,-32800.00,0.00
+2110,State Income Tax Payable,Liability,Current Liability,-2100.00,-4200.00,-6300.00,-8400.00,0.00
+2300,Notes Payable - Long Term,Liability,Long-Term Liability,-73125.00,-71250.00,-69375.00,-67500.00,-75000.00
+2400,Lease Liability - Operating,Liability,Long-Term Liability,-48000.00,-46800.00,-45600.00,-44400.00,-49200.00
+3000,Common Stock,Equity,Equity,-100000.00,-100000.00,-100000.00,-100000.00,-100000.00
+3100,Retained Earnings,Equity,Equity,-125000.00,-125000.00,-125000.00,-125000.00,-125000.00
+3200,Owner Distributions,Equity,Equity,15000.00,15000.00,15000.00,20000.00,0.00
+3900,Current Year Earnings,Equity,Equity,-58862.00,-137924.00,-223986.00,-353048.00,0.00

@@ -1,0 +1,54 @@
+transaction_id,client_name,invoice_date,payment_date,amount,service_type,status,payment_method
+REV-001,Apex Manufacturing,2025-10-02,2025-10-20,12500.00,Accounting Services,Paid,Wire Transfer
+REV-002,BlueStar Retail,2025-10-05,2025-10-25,8200.00,Tax Preparation,Paid,ACH
+REV-003,Crest Healthcare,2025-10-08,2025-10-30,22000.00,Audit Services,Paid,Wire Transfer
+REV-004,Delta Logistics,2025-10-12,2025-11-01,5500.00,Bookkeeping,Paid,Check
+REV-005,Eagle Properties,2025-10-15,2025-11-04,9800.00,Accounting Services,Paid,ACH
+REV-006,Frontier Tech,2025-10-18,2025-11-07,31000.00,Consulting,Paid,Wire Transfer
+REV-007,GreenLeaf Foods,2025-10-22,2025-11-10,7400.00,Tax Preparation,Paid,ACH
+REV-008,Harbor Industries,2025-10-25,2025-11-14,18500.00,Audit Services,Paid,Wire Transfer
+REV-009,Apex Manufacturing,2025-11-01,2025-11-20,12500.00,Accounting Services,Paid,Wire Transfer
+REV-010,BlueStar Retail,2025-11-05,2025-11-25,8200.00,Tax Preparation,Paid,ACH
+REV-011,Crest Healthcare,2025-11-08,2025-11-28,22000.00,Audit Services,Paid,Wire Transfer
+REV-012,Ironwood Construction,2025-11-10,2025-11-30,14000.00,Bookkeeping,Paid,Check
+REV-013,Junction Auto,2025-11-12,2025-12-02,6300.00,Accounting Services,Paid,ACH
+REV-014,KLM Restaurants,2025-11-15,2025-12-05,4800.00,Tax Preparation,Paid,Check
+REV-015,Liberty Insurance,2025-11-18,2025-12-08,28000.00,Consulting,Paid,Wire Transfer
+REV-016,Maple Street Café,2025-11-22,2025-12-12,3200.00,Bookkeeping,Paid,ACH
+REV-017,Apex Manufacturing,2025-12-01,2025-12-20,12500.00,Accounting Services,Paid,Wire Transfer
+REV-018,NorthStar Energy,2025-12-03,2025-12-22,19500.00,Audit Services,Paid,Wire Transfer
+REV-019,Orbit Pharmaceuticals,2025-12-05,2025-12-24,45000.00,Consulting,Paid,Wire Transfer
+REV-020,Pacific Shipping,2025-12-08,2025-12-28,8800.00,Accounting Services,Paid,ACH
+REV-021,Crest Healthcare,2025-12-10,2025-12-30,22000.00,Audit Services,Paid,Wire Transfer
+REV-022,BlueStar Retail,2025-12-12,2026-01-01,8200.00,Tax Preparation,Paid,ACH
+REV-023,Quest Solutions,2025-12-15,2026-01-04,16500.00,Consulting,Paid,Wire Transfer
+REV-024,Ridge Valley Bank,2025-12-18,2026-01-07,35000.00,Audit Services,Paid,Wire Transfer
+REV-025,Summit Hotels,2025-12-20,2026-01-09,11200.00,Accounting Services,Paid,ACH
+REV-026,Apex Manufacturing,2026-01-02,2026-01-22,12500.00,Accounting Services,Paid,Wire Transfer
+REV-027,Crest Healthcare,2026-01-05,2026-01-25,22000.00,Audit Services,Paid,Wire Transfer
+REV-028,Frontier Tech,2026-01-08,2026-01-28,31000.00,Consulting,Paid,Wire Transfer
+REV-029,Titan Wholesale,2026-01-10,2026-01-30,9400.00,Bookkeeping,Paid,ACH
+REV-030,Union Pacific Foods,2026-01-12,2026-02-01,6800.00,Tax Preparation,Paid,Check
+REV-031,BlueStar Retail,2026-01-15,2026-02-04,8200.00,Tax Preparation,Paid,ACH
+REV-032,Valley Medical Group,2026-01-18,2026-02-07,28500.00,Audit Services,Paid,Wire Transfer
+REV-033,Westside Developers,2026-01-22,2026-02-11,42000.00,Consulting,Paid,Wire Transfer
+REV-034,Apex Manufacturing,2026-02-01,2026-02-21,12500.00,Accounting Services,Paid,Wire Transfer
+REV-035,Crest Healthcare,2026-02-05,2026-02-25,22000.00,Audit Services,Paid,Wire Transfer
+REV-036,XYZ Distributors,2026-02-08,2026-02-28,7600.00,Bookkeeping,Paid,ACH
+REV-037,Yellowstone Mining,2026-02-10,2026-03-02,18000.00,Accounting Services,Paid,Wire Transfer
+REV-038,Zenith Software,2026-02-12,2026-03-04,55000.00,Consulting,Paid,Wire Transfer
+REV-039,Liberty Insurance,2026-02-15,2026-03-07,28000.00,Consulting,Paid,Wire Transfer
+REV-040,NorthStar Energy,2026-02-18,2026-03-10,19500.00,Audit Services,Paid,Wire Transfer
+REV-041,Apex Manufacturing,2026-03-01,2026-03-21,12500.00,Accounting Services,Paid,Wire Transfer
+REV-042,Crest Healthcare,2026-03-05,2026-03-25,22000.00,Audit Services,Paid,Wire Transfer
+REV-043,Orbit Pharmaceuticals,2026-03-08,2026-03-28,45000.00,Consulting,Paid,Wire Transfer
+REV-044,Pacific Shipping,2026-03-10,2026-03-30,8800.00,Accounting Services,Paid,ACH
+REV-045,Quest Solutions,2026-03-12,2026-04-01,16500.00,Consulting,Paid,Wire Transfer
+REV-046,BlueStar Retail,2026-03-15,2026-04-04,8200.00,Tax Preparation,Paid,ACH
+REV-047,Ridge Valley Bank,2026-03-18,2026-04-07,35000.00,Audit Services,Paid,Wire Transfer
+REV-048,Frontier Tech,2026-03-22,2026-04-11,31000.00,Consulting,Paid,Wire Transfer
+REV-049,Apex Manufacturing,2026-04-01,,12500.00,Accounting Services,Pending,Wire Transfer
+REV-050,Crest Healthcare,2026-04-05,,22000.00,Audit Services,Pending,Wire Transfer
+REV-051,Zenith Software,2026-04-08,,55000.00,Consulting,Pending,Wire Transfer
+REV-052,Valley Medical Group,2026-04-10,,28500.00,Audit Services,Pending,Wire Transfer
+REV-053,Westside Developers,2026-04-12,,42000.00,Consulting,Pending,Wire Transfer

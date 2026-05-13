@@ -3,620 +3,207 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>App 2 — Accounting AI</title>
-<link href="https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,300&display=swap" rel="stylesheet">
-<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+<title>CoReckoner — Accounting AI</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/plotly.js/2.27.0/plotly.min.js"></script>
 <style>
-  :root {
-    --bg:        #0d1117;
-    --surface:   #161b22;
-    --surface2:  #1c2333;
-    --border:    #30363d;
-    --text:      #e6edf3;
-    --text-dim:  #8b949e;
-    --teal:      #39d353;
-    --blue:      #58a6ff;
-    --amber:     #d29922;
-    --red:       #f85149;
-    --purple:    #bc8cff;
-    --radius:    10px;
-    --mono:      'DM Mono', monospace;
-    --sans:      'DM Sans', sans-serif;
-  }
+:root {
+  --bg:        #0d1117;
+  --surface:   #161b22;
+  --surface2:  #1c2333;
+  --surface3:  #21262d;
+  --border:    #30363d;
+  --text:      #e6edf3;
+  --dim:       #8b949e;
+  --teal:      #39d353;
+  --blue:      #58a6ff;
+  --amber:     #d29922;
+  --red:       #f85149;
+  --purple:    #bc8cff;
+  --orange:    #e67e22;
+  --radius:    10px;
+  --mono:      'DM Mono', monospace;
+  --sans:      'DM Sans', sans-serif;
+  --sidebar-w: 268px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14px;height:100vh;display:flex;flex-direction:column;overflow:hidden}
 
-  * { box-sizing: border-box; margin: 0; padding: 0; }
+/* HEADER */
+header{background:var(--surface);border-bottom:1px solid var(--border);padding:12px 20px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;z-index:10}
+.logo{display:flex;align-items:center;gap:10px}
+.logo-icon{width:30px;height:30px;background:linear-gradient(135deg,#1f6feb,#39d353);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:15px}
+.logo-text{font-size:15px;font-weight:500}
+.logo-sub{font-size:11px;color:var(--dim);font-family:var(--mono)}
+.header-right{display:flex;align-items:center;gap:10px}
+.status-dot{width:8px;height:8px;border-radius:50%;background:var(--teal);box-shadow:0 0 6px var(--teal);animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+.status-text{font-size:12px;color:var(--dim);font-family:var(--mono)}
 
-  body {
-    background: var(--bg);
-    color: var(--text);
-    font-family: var(--sans);
-    font-size: 14px;
-    height: 100vh;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-  }
+/* LAYOUT */
+.layout{display:flex;flex:1;overflow:hidden}
 
-  /* ── HEADER ── */
-  header {
-    background: var(--surface);
-    border-bottom: 1px solid var(--border);
-    padding: 14px 24px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    flex-shrink: 0;
-  }
+/* SIDEBAR */
+.sidebar{width:var(--sidebar-w);background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;overflow:hidden}
+.sidebar-top{padding:12px;border-bottom:1px solid var(--border);flex-shrink:0}
+.new-chat-btn{width:100%;background:var(--blue);border:none;color:#000;padding:9px 14px;border-radius:8px;cursor:pointer;font-size:13px;font-family:var(--sans);font-weight:500;display:flex;align-items:center;gap:6px;justify-content:center;transition:opacity .15s}
+.new-chat-btn:hover{opacity:.85}
 
-  .logo {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-  }
+/* session list */
+.session-list-wrap{flex:1;overflow-y:auto;padding:8px}
+.session-section-label{font-size:10px;font-family:var(--mono);color:var(--dim);letter-spacing:1px;text-transform:uppercase;padding:6px 6px 4px;margin-top:4px}
+.session-item{padding:8px 10px;border-radius:6px;cursor:pointer;display:flex;align-items:flex-start;gap:8px;transition:background .1s;margin-bottom:2px;position:relative}
+.session-item:hover{background:var(--surface2)}
+.session-item.active{background:var(--surface3);border:1px solid var(--border)}
+.session-item-text{flex:1;min-width:0}
 
-  .logo-icon {
-    width: 32px; height: 32px;
-    background: linear-gradient(135deg, #1f6feb, #39d353);
-    border-radius: 8px;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 16px;
-  }
+/* inline rename input */
+.session-title-view{font-size:12px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.4}
+.session-title-input{font-size:12px;color:var(--text);background:var(--surface3);border:1px solid var(--blue);border-radius:4px;padding:1px 4px;width:100%;font-family:var(--sans);outline:none;display:none}
+.session-date{font-size:10px;color:var(--dim);font-family:var(--mono);margin-top:2px}
+.session-actions{display:flex;gap:4px;opacity:0;transition:opacity .15s;flex-shrink:0}
+.session-item:hover .session-actions{opacity:1}
+.session-action-btn{background:none;border:none;color:var(--dim);cursor:pointer;font-size:13px;padding:1px 3px;line-height:1;border-radius:3px;transition:color .1s}
+.session-action-btn:hover{color:var(--text)}
+.session-action-btn.del:hover{color:var(--red)}
 
-  .logo-text { font-size: 15px; font-weight: 500; letter-spacing: -0.3px; }
-  .logo-sub  { font-size: 11px; color: var(--text-dim); font-family: var(--mono); }
+/* uploads section in sidebar */
+.uploads-section{padding:0 8px;border-top:1px solid var(--border);flex-shrink:0;max-height:200px;overflow-y:auto}
+.uploads-section.empty{display:none}
+.upload-item{padding:7px 9px;border-radius:6px;display:flex;align-items:flex-start;gap:6px;margin-bottom:2px;background:var(--surface2);border:1px solid var(--border);transition:border-color .1s}
+.upload-item:hover{border-color:var(--blue)}
+.upload-item-text{flex:1;min-width:0}
+.upload-filename{font-size:11px;color:var(--text);font-family:var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.3}
+.upload-meta{font-size:10px;color:var(--dim);font-family:var(--mono);margin-top:2px}
+.upload-tag{display:inline-block;font-size:9px;padding:1px 4px;border-radius:3px;background:rgba(88,166,255,.15);color:var(--blue);margin-right:4px}
+.upload-tag.rag{background:rgba(188,140,255,.15);color:var(--purple)}
+.upload-delete{background:none;border:none;color:var(--dim);cursor:pointer;font-size:12px;padding:1px 4px;line-height:1;border-radius:3px;flex-shrink:0;transition:color .1s}
+.upload-delete:hover{color:var(--red)}
 
-  .header-right { display: flex; align-items: center; gap: 12px; }
+/* sidebar bottom quick questions */
+.sidebar-bottom{padding:10px;border-top:1px solid var(--border);flex-shrink:0}
+.sidebar-label{font-size:10px;font-family:var(--mono);color:var(--dim);letter-spacing:1px;text-transform:uppercase;margin-bottom:8px}
+.quick-btn{display:block;width:100%;text-align:left;background:var(--surface2);border:1px solid var(--border);color:var(--dim);padding:7px 9px;border-radius:6px;cursor:pointer;font-size:11px;font-family:var(--sans);margin-bottom:5px;transition:all .15s;line-height:1.4}
+.quick-btn:hover{border-color:var(--blue);color:var(--text)}
+.q-tag{display:inline-block;font-size:9px;font-family:var(--mono);padding:1px 5px;border-radius:3px;margin-bottom:2px}
+.tag-sql{background:rgba(88,166,255,.15);color:var(--blue)}
+.tag-rag{background:rgba(188,140,255,.15);color:var(--purple)}
+.tag-both{background:rgba(57,211,83,.15);color:var(--teal)}
 
-  .status-dot {
-    width: 8px; height: 8px; border-radius: 50%;
-    background: var(--teal);
-    box-shadow: 0 0 6px var(--teal);
-    animation: pulse 2s infinite;
-  }
-  @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.4; }
-  }
+/* CHAT AREA */
+.chat-area{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.messages{flex:1;overflow-y:auto;padding:24px;display:flex;flex-direction:column;gap:20px}
 
-  .status-text { font-size: 12px; color: var(--text-dim); font-family: var(--mono); }
+/* welcome */
+.welcome{text-align:center;margin:auto;padding:40px 20px;max-width:480px}
+.welcome-icon{font-size:44px;margin-bottom:14px}
+.welcome h2{font-size:22px;font-weight:500;margin-bottom:8px}
+.welcome p{color:var(--dim);line-height:1.6}
+.chips{display:flex;gap:8px;justify-content:center;margin-top:14px;flex-wrap:wrap}
+.chip{font-size:11px;font-family:var(--mono);padding:3px 9px;border-radius:20px;border:1px solid}
+.chip-sql{border-color:var(--blue);color:var(--blue)}
+.chip-rag{border-color:var(--purple);color:var(--purple)}
+.chip-both{border-color:var(--teal);color:var(--teal)}
 
-  .btn-clear {
-    background: transparent;
-    border: 1px solid var(--border);
-    color: var(--text-dim);
-    padding: 5px 12px;
-    border-radius: 6px;
-    cursor: pointer;
-    font-size: 12px;
-    font-family: var(--sans);
-    transition: all .15s;
-  }
-  .btn-clear:hover { border-color: var(--red); color: var(--red); }
+/* messages */
+.msg{display:flex;gap:12px;animation:fadeIn .2s ease}
+@keyframes fadeIn{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
+.msg-avatar{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;margin-top:2px}
+.avatar-user{background:var(--surface2);border:1px solid var(--border)}
+.avatar-ai{background:linear-gradient(135deg,#1f6feb,#39d353)}
+.msg-body{flex:1;min-width:0}
+.msg-meta{display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap}
+.msg-name{font-size:12px;font-weight:500}
+.msg-time{font-size:11px;color:var(--dim);font-family:var(--mono)}
 
-  /* ── MAIN LAYOUT ── */
-  .main {
-    display: flex;
-    flex: 1;
-    overflow: hidden;
-  }
+/* pipeline badge */
+.pipeline-badge{font-size:10px;font-family:var(--mono);padding:1px 6px;border-radius:3px}
+.badge-sql{background:rgba(88,166,255,.15);color:var(--blue)}
+.badge-rag{background:rgba(188,140,255,.15);color:var(--purple)}
+.badge-both{background:rgba(57,211,83,.15);color:var(--teal)}
 
-  /* ── SIDEBAR ── */
-  .sidebar {
-    width: 260px;
-    background: var(--surface);
-    border-right: 1px solid var(--border);
-    display: flex;
-    flex-direction: column;
-    flex-shrink: 0;
-    overflow-y: auto;
-  }
+/* response type badge */
+.rtype-badge{font-size:11px;font-family:var(--mono);padding:3px 9px;border-radius:4px;font-weight:600;letter-spacing:.3px}
+.rtype-answer{}
+.rtype-no_data{background:rgba(210,153,34,.2);color:var(--amber);border:1px solid rgba(210,153,34,.4)}
+.rtype-sql_error{background:rgba(248,81,73,.2);color:var(--red);border:1px solid rgba(248,81,73,.4)}
+.rtype-rag_not_found{background:rgba(210,153,34,.2);color:var(--amber);border:1px solid rgba(210,153,34,.4)}
+.rtype-system_error{background:rgba(248,81,73,.2);color:var(--red);border:1px solid rgba(248,81,73,.4)}
 
-  .sidebar-section { padding: 16px; border-bottom: 1px solid var(--border); }
-  .sidebar-label {
-    font-size: 10px;
-    font-family: var(--mono);
-    color: var(--text-dim);
-    letter-spacing: 1px;
-    text-transform: uppercase;
-    margin-bottom: 10px;
-  }
+.route-hint{font-size:11px;color:var(--dim)}
+.msg-text{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:11px 14px;line-height:1.65;color:var(--text)}
+.msg-user .msg-text{background:var(--surface2)}
 
-  .quick-btn {
-    display: block;
-    width: 100%;
-    text-align: left;
-    background: var(--surface2);
-    border: 1px solid var(--border);
-    color: var(--text-dim);
-    padding: 8px 10px;
-    border-radius: 6px;
-    cursor: pointer;
-    font-size: 12px;
-    font-family: var(--sans);
-    margin-bottom: 6px;
-    transition: all .15s;
-    line-height: 1.4;
-  }
-  .quick-btn:hover { border-color: var(--blue); color: var(--text); }
-  .quick-btn .q-tag {
-    display: inline-block;
-    font-size: 10px;
-    font-family: var(--mono);
-    padding: 1px 5px;
-    border-radius: 3px;
-    margin-bottom: 3px;
-  }
-  .tag-sql { background: rgba(88,166,255,.15); color: var(--blue); }
-  .tag-rag { background: rgba(188,140,255,.15); color: var(--purple); }
-  .tag-both { background: rgba(57,211,83,.15); color: var(--teal); }
+/* SQL result */
+.sql-result{margin-top:10px;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+.sql-header{background:var(--surface2);padding:5px 12px;font-size:11px;font-family:var(--mono);color:var(--dim);display:flex;align-items:center;gap:6px;border-bottom:1px solid var(--border)}
+.sql-query-text{background:var(--bg);padding:8px 12px;font-size:12px;font-family:var(--mono);color:var(--blue);border-bottom:1px solid var(--border);white-space:pre-wrap;word-break:break-all}
+.data-table{width:100%;border-collapse:collapse}
+.data-table th{background:var(--surface2);padding:7px 10px;font-size:11px;font-family:var(--mono);color:var(--dim);text-align:left;border-bottom:1px solid var(--border);white-space:nowrap}
+.data-table td{padding:7px 10px;font-size:12px;font-family:var(--mono);border-bottom:1px solid rgba(48,54,61,.5);color:var(--text);white-space:nowrap}
+.data-table tr:last-child td{border-bottom:none}
+.data-table tr:hover td{background:var(--surface2)}
 
-  .stats-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 8px;
-  }
-  .stat-card {
-    background: var(--surface2);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 8px;
-    text-align: center;
-  }
-  .stat-num { font-size: 18px; font-weight: 500; color: var(--blue); font-family: var(--mono); }
-  .stat-label { font-size: 10px; color: var(--text-dim); margin-top: 2px; }
+/* Plotly chart container */
+.chart-wrap{margin-top:10px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);padding:8px;overflow:hidden}
+.chart-inner{width:100%;height:320px}
 
-/* New chat button */
-  .sidebar-newchat {
-    border-bottom: 1px solid var(--border);
-    padding-bottom: 12px;
-  }
-  .newchat-btn {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    width: 100%;
-    background: var(--surface2);
-    border: 1px solid var(--border);
-    color: var(--text);
-    padding: 8px 12px;
-    border-radius: 6px;
-    cursor: pointer;
-    font-size: 13px;
-    font-family: var(--sans);
-    font-weight: 500;
-    transition: all .15s;
-  }
-  .newchat-btn:hover {
-    border-color: var(--blue);
-    background: rgba(88, 166, 255, 0.1);
-  }
-  .newchat-icon {
-    font-size: 16px;
-    line-height: 1;
-    color: var(--blue);
-  }
-  .newchat-toast {
-    margin-top: 6px;
-    font-size: 11px;
-    color: var(--teal);
-    font-family: var(--mono);
-    opacity: 0;
-    transition: opacity .3s;
-    text-align: center;
-  }
-  .newchat-toast.show { opacity: 1; }
+/* citations */
+.sources{margin-top:10px;display:flex;flex-direction:column;gap:4px}
+.source-item{background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-size:11px;font-family:var(--mono);color:var(--dim)}
+.source-page{color:var(--purple);margin-right:8px}
 
-  /* Collapsible label */
-  .sidebar-label-collapsible {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    cursor: pointer;
-    user-select: none;
-  }
-  .sidebar-label-collapsible:hover { color: var(--text); }
-  .collapse-toggle {
-    transition: transform .2s;
-    font-size: 9px;
-  }
-  .collapse-toggle.collapsed { transform: rotate(-90deg); }
+/* loading */
+.loading{display:flex;gap:12px;align-items:flex-start}
+.loading-dots{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px 16px;display:flex;gap:5px;align-items:center}
+.dot{width:6px;height:6px;border-radius:50%;background:var(--dim);animation:bounce .9s infinite}
+.dot:nth-child(2){animation-delay:.15s}.dot:nth-child(3){animation-delay:.3s}
+@keyframes bounce{0%,80%,100%{transform:translateY(0);opacity:.4}40%{transform:translateY(-5px);opacity:1}}
 
-  /* Conversation history list */
-  .sidebar-history { background: rgba(88, 166, 255, 0.03); }
-  .history-item {
-    display: flex;
-    align-items: flex-start;
-    gap: 6px;
-    background: var(--surface2);
-    border: 1px solid var(--border);
-    color: var(--text-dim);
-    padding: 7px 9px;
-    border-radius: 6px;
-    cursor: pointer;
-    font-size: 12px;
-    margin-bottom: 5px;
-    transition: all .15s;
-    line-height: 1.3;
-  }
-  .history-item:hover {
-    border-color: var(--blue);
-    color: var(--text);
-  }
-  .history-num {
-    font-family: var(--mono);
-    font-size: 10px;
-    color: var(--text-dim);
-    margin-top: 1px;
-    flex-shrink: 0;
-  }
-  .history-text {
-    flex: 1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-  }
-  .history-badge {
-    font-size: 9px;
-    font-family: var(--mono);
-    padding: 1px 4px;
-    border-radius: 3px;
-    flex-shrink: 0;
-    margin-top: 1px;
-  }
+/* INPUT */
+.input-area{border-top:1px solid var(--border);padding:14px 20px;background:var(--surface);flex-shrink:0}
+.input-wrap{display:flex;gap:10px;align-items:flex-end;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px;transition:border-color .15s}
+.input-wrap:focus-within{border-color:var(--blue)}
+textarea{flex:1;background:transparent;border:none;outline:none;color:var(--text);font-family:var(--sans);font-size:14px;line-height:1.5;resize:none;min-height:22px;max-height:120px}
+textarea::placeholder{color:var(--dim)}
 
-  /* Highlight pulse for jumped-to messages */
-  @keyframes highlightPulse {
-    0%, 100% { background: var(--surface); }
-    50% { background: rgba(88, 166, 255, 0.15); }
-  }
-  .msg-highlight .msg-text {
-    animation: highlightPulse 1.6s ease;
-  }
+/* attach (paperclip) button — matches send button proportions */
+.attach-btn{background:var(--surface3);border:1px solid var(--border);color:var(--dim);width:32px;height:32px;border-radius:6px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .15s;font-size:15px;position:relative}
+.attach-btn:hover{border-color:var(--blue);color:var(--text)}
+.attach-btn:disabled{opacity:.35;cursor:default}
+.attach-btn input[type=file]{display:none}
 
-  /* Compact stats and legend */
-  .sidebar-compact { padding: 12px 16px; }
-  .compact-stats {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 12px;
-    color: var(--text-dim);
-    font-family: var(--mono);
-  }
-  .compact-stats strong {
-    color: var(--blue);
-    font-weight: 500;
-    margin-right: 2px;
-  }
-  .cstat-divider { color: var(--border); }
-  .compact-legend {
-    display: flex;
-    gap: 6px;
-    flex-wrap: wrap;
-  }
-  .compact-legend .chip {
-    font-size: 10px;
-    padding: 2px 8px;
-  }
+.send-btn{background:var(--blue);border:none;color:#000;width:32px;height:32px;border-radius:6px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:opacity .15s;font-size:14px}
+.send-btn:hover{opacity:.85}
+.send-btn:disabled{opacity:.35;cursor:default}
+.input-hint{font-size:11px;color:var(--dim);margin-top:7px;font-family:var(--mono);text-align:center}
 
-  /* ── CHAT AREA ── */
-  .chat-area {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-  }
+/* restore banner */
+.restore-banner{background:var(--surface2);border-bottom:1px solid var(--border);padding:6px 20px;font-size:12px;color:var(--dim);font-family:var(--mono);display:none;flex-shrink:0}
+.restore-banner.visible{display:block}
 
-  .messages {
-    flex: 1;
-    overflow-y: auto;
-    padding: 24px;
-    display: flex;
-    flex-direction: column;
-    gap: 20px;
-  }
+/* toast */
+.toast-container{position:fixed;top:60px;right:20px;display:flex;flex-direction:column;gap:8px;z-index:100;pointer-events:none}
+.toast{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:10px 14px;font-size:13px;color:var(--text);min-width:240px;max-width:380px;box-shadow:0 4px 16px rgba(0,0,0,.4);transform:translateX(420px);transition:transform .25s ease;pointer-events:auto;cursor:pointer;line-height:1.4}
+.toast.show{transform:translateX(0)}
+.toast.success{border-left:3px solid var(--teal)}
+.toast.error{border-left:3px solid var(--red)}
+.toast-title{font-weight:500;margin-bottom:2px;font-size:12px}
+.toast-body{color:var(--dim);font-size:12px;font-family:var(--mono)}
 
-  /* Welcome screen */
-  .welcome {
-    text-align: center;
-    margin: auto;
-    padding: 40px 20px;
-    max-width: 500px;
-  }
-  .welcome-icon { font-size: 48px; margin-bottom: 16px; }
-  .welcome h2 { font-size: 22px; font-weight: 500; margin-bottom: 8px; }
-  .welcome p { color: var(--text-dim); line-height: 1.6; font-size: 14px; }
-  .pipeline-chips { display: flex; gap: 8px; justify-content: center; margin-top: 16px; flex-wrap: wrap; }
-  .chip {
-    font-size: 11px;
-    font-family: var(--mono);
-    padding: 4px 10px;
-    border-radius: 20px;
-    border: 1px solid;
-  }
-  .chip-sql   { border-color: var(--blue);   color: var(--blue); }
-  .chip-rag   { border-color: var(--purple); color: var(--purple); }
-  .chip-both  { border-color: var(--teal);   color: var(--teal); }
-
-  /* Message bubbles */
-  .msg { display: flex; gap: 12px; animation: fadeIn .2s ease; }
-  @keyframes fadeIn { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:none; } }
-
-  .msg-avatar {
-    width: 30px; height: 30px; border-radius: 50%;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 14px; flex-shrink: 0; margin-top: 2px;
-  }
-  .avatar-user { background: var(--surface2); border: 1px solid var(--border); }
-  .avatar-ai   { background: linear-gradient(135deg,#1f6feb,#39d353); }
-
-  .msg-body { flex: 1; min-width: 0; }
-
-  .msg-meta {
-    display: flex; align-items: center; gap: 8px; margin-bottom: 4px;
-  }
-  .msg-name { font-size: 12px; font-weight: 500; }
-  .msg-time { font-size: 11px; color: var(--text-dim); font-family: var(--mono); }
-
-  .pipeline-badge {
-    font-size: 10px;
-    font-family: var(--mono);
-    padding: 1px 6px;
-    border-radius: 3px;
-  }
-  .badge-sql  { background: rgba(88,166,255,.15); color: var(--blue); }
-  .badge-rag  { background: rgba(188,140,255,.15); color: var(--purple); }
-  .badge-both { background: rgba(57,211,83,.15); color: var(--teal); }
-
-  .msg-text {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 12px 14px;
-    line-height: 1.65;
-    color: var(--text);
-  }
-  .msg-user .msg-text {
-    background: var(--surface2);
-    color: var(--text);
-  }
-
-  .msg-error {
-    border-color: var(--red) !important;
-  }
-  .msg-error strong {
-    color: var(--red);
-    display: inline-block;
-    margin-bottom: 4px;
-  }
-  .error-hint {
-    font-size: 12px;
-    color: var(--text-dim);
-    line-height: 1.5;
-  }
-
-  .chart-container {
-  margin-top: 12px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 12px;
-  }
-
-  .chart-header {
-  font-size: 11px;
-  font-family: var(--mono);
-  color: var(--text-dim);
-  margin-bottom: 8px;
-  letter-spacing: 0.5px;
-  }
-  
- .chart-render {
-  width: 100%;
-  min-height: 320px;
-  }
-
-  /* SQL result table */
-  .sql-result {
-    margin-top: 10px;
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    overflow: hidden;
-  }
-  .sql-header {
-    background: var(--surface2);
-    padding: 6px 12px;
-    font-size: 11px;
-    font-family: var(--mono);
-    color: var(--text-dim);
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    border-bottom: 1px solid var(--border);
-  }
-  .sql-query-text {
-    background: var(--bg);
-    padding: 8px 12px;
-    font-size: 12px;
-    font-family: var(--mono);
-    color: var(--blue);
-    border-bottom: 1px solid var(--border);
-    white-space: pre-wrap;
-    word-break: break-all;
-  }
-  .data-table { width: 100%; border-collapse: collapse; }
-  .data-table th {
-    background: var(--surface2);
-    padding: 7px 10px;
-    font-size: 11px;
-    font-family: var(--mono);
-    color: var(--text-dim);
-    text-align: left;
-    border-bottom: 1px solid var(--border);
-    white-space: nowrap;
-  }
-  .data-table td {
-    padding: 7px 10px;
-    font-size: 12px;
-    font-family: var(--mono);
-    border-bottom: 1px solid rgba(48,54,61,0.5);
-    color: var(--text);
-    white-space: nowrap;
-  }
-  .data-table tr:last-child td { border-bottom: none; }
-  .data-table tr:hover td { background: var(--surface2); }
-
-  // Plotly chart for SQL results
-  if (data.chart_spec) {
-    const chartId = `chart-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-    extra += `
-      <div class="chart-container">
-        <div class="chart-header">📈 ${escHtml(data.chart_spec.title || 'Visualization')}</div>
-        <div id="${chartId}" class="chart-render"></div>
-      </div>`;
-
-    // Render after DOM insertion (setTimeout pushes to next tick)
-    setTimeout(() => renderChart(chartId, data.chart_spec), 0);
-  }
-
-  /* RAG sources */
-  .sources {
-    margin-top: 10px;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-  }
-  .sources-header {
-    font-size: 11px;
-    font-family: var(--mono);
-    color: var(--text-dim);
-    margin-top: 12px;
-    margin-bottom: 6px;
-    letter-spacing: 0.5px;
-  }
-
-  .source-group {
-    margin-bottom: 8px;
-  }
-
-  .source-doc-name {
-    font-size: 11px;
-    font-family: var(--mono);
-    color: var(--purple);
-    font-weight: 500;
-    margin-bottom: 4px;
-    padding-left: 2px;
-  }
-
-  .source-item {
-    background: var(--surface2);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 7px 10px;
-    font-size: 11px;
-    font-family: var(--mono);
-    color: var(--text-dim);
-  }
-  .source-page { color: var(--purple); margin-right: 8px; }
-
-  /* Loading indicator */
-  .loading {
-    display: flex; gap: 12px; align-items: flex-start;
-  }
-  .loading-dots {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 12px 16px;
-    display: flex; gap: 5px; align-items: center;
-  }
-  .dot {
-    width: 6px; height: 6px; border-radius: 50%;
-    background: var(--text-dim);
-    animation: bounce .9s infinite;
-  }
-  .dot:nth-child(2) { animation-delay: .15s; }
-  .dot:nth-child(3) { animation-delay: .30s; }
-  @keyframes bounce {
-    0%,80%,100% { transform: translateY(0); opacity:.4; }
-    40%          { transform: translateY(-5px); opacity:1; }
-  }
-
-  /* ── INPUT AREA ── */
-  .input-area {
-    border-top: 1px solid var(--border);
-    padding: 16px 24px;
-    background: var(--surface);
-    flex-shrink: 0;
-  }
-
-  .input-wrap {
-    display: flex;
-    gap: 10px;
-    align-items: flex-end;
-    background: var(--surface2);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 10px 12px;
-    transition: border-color .15s;
-  }
-  .input-wrap:focus-within { border-color: var(--blue); }
-
-  textarea {
-    flex: 1;
-    background: transparent;
-    border: none;
-    outline: none;
-    color: var(--text);
-    font-family: var(--sans);
-    font-size: 14px;
-    line-height: 1.5;
-    resize: none;
-    min-height: 22px;
-    max-height: 120px;
-  }
-  textarea::placeholder { color: var(--text-dim); }
-
-  .send-btn {
-    background: var(--blue);
-    border: none;
-    color: #000;
-    width: 32px; height: 32px;
-    border-radius: 6px;
-    cursor: pointer;
-    display: flex; align-items: center; justify-content: center;
-    flex-shrink: 0;
-    transition: opacity .15s;
-    font-size: 14px;
-  }
-  .send-btn:hover { opacity: .85; }
-  .send-btn:disabled { opacity: .35; cursor: default; }
-
-  .input-hint {
-    font-size: 11px;
-    color: var(--text-dim);
-    margin-top: 8px;
-    font-family: var(--mono);
-    text-align: center;
-  }
-
-  /* Scrollbar */
-  ::-webkit-scrollbar { width: 5px; }
-  ::-webkit-scrollbar-track { background: transparent; }
-  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar{width:4px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
 </style>
 </head>
 <body>
 
-<!-- HEADER -->
 <header>
   <div class="logo">
     <div class="logo-icon">📊</div>
     <div>
-      <div class="logo-text">Accounting AI</div>
-      <div class="logo-sub">App 2 — Hybrid RAG + Text-to-SQL</div>
+      <div class="logo-text">CoReckoner</div>
+      <div class="logo-sub">Accounting AI — Hybrid RAG + Text-to-SQL</div>
     </div>
   </div>
   <div class="header-right">
@@ -625,101 +212,53 @@
   </div>
 </header>
 
-<div class="main">
-
-<!-- SIDEBAR -->
+<div class="layout">
+  <!-- SIDEBAR -->
   <div class="sidebar">
+    <div class="sidebar-top">
+      <button class="new-chat-btn" onclick="newChat()">＋ New Chat</button>
+    </div>
 
-    <!-- New Chat button (always at top) -->
-    <div class="sidebar-section sidebar-newchat">
-      <button class="newchat-btn" onclick="newChat()">
-        <span class="newchat-icon">+</span>
-        <span>New chat</span>
+    <div class="session-list-wrap">
+      <div class="session-section-label">Recent sessions</div>
+      <div id="sessionItems" style="color:var(--dim);font-size:12px;padding:8px 6px">Loading...</div>
+    </div>
+
+    <!-- Uploaded files (Phase 3 Step 5) -->
+    <div class="uploads-section empty" id="uploadsSection">
+      <div class="session-section-label">Uploaded files</div>
+      <div id="uploadsList"></div>
+    </div>
+
+    <div class="sidebar-bottom">
+      <div class="sidebar-label">Quick questions</div>
+      <button class="quick-btn" onclick="sendQuestion('What is our net income for Q1 2026?')">
+        <span class="q-tag tag-sql">SQL</span><br>Q1 net income
       </button>
-      <div class="newchat-toast" id="newchatToast">Started new chat</div>
+      <button class="quick-btn" onclick="sendQuestion('Show revenue by service line as a bar chart')">
+        <span class="q-tag tag-sql">SQL</span><br>Revenue bar chart
+      </button>
+      <button class="quick-btn" onclick="sendQuestion('Show me all AR over 60 days with billing partner')">
+        <span class="q-tag tag-sql">SQL</span><br>AR aging &gt;60 days
+      </button>
+      <button class="quick-btn" onclick="sendQuestion('What is the penalty for late payroll tax deposits?')">
+        <span class="q-tag tag-rag">RAG</span><br>Late deposit penalty
+      </button>
+      <button class="quick-btn" onclick="sendQuestion('What is our overdue AP balance and what is the IRS penalty for late deposits?')">
+        <span class="q-tag tag-both">BOTH</span><br>Overdue + IRS penalty
+      </button>
     </div>
-
-    <!-- Conversation history (auto-shows once history exists) -->
-    <div class="sidebar-section sidebar-history" id="historySection" style="display:none;">
-      <div class="sidebar-label">Conversation</div>
-      <div id="historyList"></div>
-    </div>
-
-    <!-- Sample questions (collapsible, auto-collapses after first question) -->
-    <div class="sidebar-section">
-      <div class="sidebar-label sidebar-label-collapsible" onclick="toggleSampleQuestions()">
-        <span>Sample questions</span>
-        <span class="collapse-toggle" id="sampleToggle">▼</span>
-      </div>
-      <div id="sampleQuestions">
-        <button class="quick-btn" onclick="sendQuestion(this.dataset.q)" data-q="What invoices are overdue by more than 60 days?">
-          <span class="q-tag tag-sql">SQL</span><br>
-          AP aging over 60 days
-        </button>
-        <button class="quick-btn" onclick="sendQuestion(this.dataset.q)" data-q="Show me revenue by service line for Q1 2026 using bar chart">
-          <span class="q-tag tag-sql">SQL</span><br>
-          Revenue by service line (bar)
-        </button>
-        <button class="quick-btn" onclick="sendQuestion(this.dataset.q)" data-q="Break down our overdue accounts payable by vendor using pie chart">
-          <span class="q-tag tag-sql">SQL</span><br>
-          Overdue AP by vendor (pie)
-        </button>
-        <button class="quick-btn" onclick="sendQuestion(this.dataset.q)" data-q="How has our cash balance changed since January? Use line chart">
-          <span class="q-tag tag-sql">SQL</span><br>
-          Cash trend (line chart)
-        </button>
-        <button class="quick-btn" onclick="sendQuestion(this.dataset.q)" data-q="What is our net income year-to-date?">
-          <span class="q-tag tag-sql">SQL</span><br>
-          Net income YTD
-        </button>
-        <button class="quick-btn" onclick="sendQuestion(this.dataset.q)" data-q="What does the IRS say about late payroll tax deposit penalties?">
-          <span class="q-tag tag-rag">RAG</span><br>
-          Late deposit penalties
-        </button>
-        <button class="quick-btn" onclick="sendQuestion(this.dataset.q)" data-q="Are employer-provided meals taxable to employees?">
-          <span class="q-tag tag-rag">RAG</span><br>
-          Fringe benefit (meals)
-        </button>
-        <button class="quick-btn" onclick="sendQuestion(this.dataset.q)" data-q="What is our overdue AP balance and what does the IRS say about late payment penalties?">
-          <span class="q-tag tag-both">BOTH</span><br>
-          Overdue AP + IRS penalty
-        </button>
-      </div>
-    </div>
-
-    <!-- Compact stats (single inline row) -->
-    <div class="sidebar-section sidebar-compact">
-      <div class="sidebar-label">Stats</div>
-      <div class="compact-stats">
-        <span class="cstat"><strong id="statTurns">—</strong> Q</span>
-        <span class="cstat-divider">·</span>
-        <span class="cstat"><strong id="statAP">—</strong> AP</span>
-        <span class="cstat-divider">·</span>
-        <span class="cstat"><strong id="statRev">—</strong> Rev</span>
-        <span class="cstat-divider">·</span>
-        <span class="cstat"><strong id="statJE">—</strong> JE</span>
-      </div>
-    </div>
-
-    <!-- Compact pipeline legend (single inline row) -->
-    <div class="sidebar-section sidebar-compact">
-      <div class="sidebar-label">Pipelines</div>
-      <div class="compact-legend">
-        <span class="chip chip-sql">SQL</span>
-        <span class="chip chip-rag">RAG</span>
-        <span class="chip chip-both">BOTH</span>
-      </div>
-    </div>
-
   </div>
+
   <!-- CHAT AREA -->
   <div class="chat-area">
+    <div class="restore-banner" id="restoreBanner"></div>
     <div class="messages" id="messages">
       <div class="welcome" id="welcome">
         <div class="welcome-icon">🧮</div>
-        <h2>Accounting AI Chatbot</h2>
-        <p>Ask questions about your QuickBooks data or IRS payroll tax regulations. The system automatically routes your question to the right pipeline.</p>
-        <div class="pipeline-chips">
+        <h2>CoReckoner</h2>
+        <p>Ask questions about your QuickBooks data or IRS payroll tax regulations. Upload your own CSV or Excel via 📎 to query it the same way. Sessions are saved automatically — pick up any conversation from the sidebar.</p>
+        <div class="chips">
           <span class="chip chip-sql">Text-to-SQL</span>
           <span class="chip chip-rag">RAG / ChromaDB</span>
           <span class="chip chip-both">Hybrid router</span>
@@ -729,29 +268,49 @@
 
     <div class="input-area">
       <div class="input-wrap">
-        <textarea
-          id="questionInput"
+        <button class="attach-btn" id="attachBtn" onclick="triggerFileUpload()" title="Upload CSV or Excel">
+          📎
+          <input type="file" id="fileInput" accept=".csv,.xlsx,.xls" onchange="handleFileSelected(event)">
+        </button>
+        <textarea id="questionInput"
           placeholder="Ask about your accounting data or tax regulations..."
           rows="1"
           onkeydown="handleKey(event)"
-          oninput="autoResize(this)"
-        ></textarea>
+          oninput="autoResize(this)"></textarea>
         <button class="send-btn" id="sendBtn" onclick="sendMessage()">➤</button>
       </div>
-      <div class="input-hint">Enter to send · Shift+Enter for new line · Questions are routed automatically</div>
+      <div class="input-hint">Enter to send · Shift+Enter for new line · 📎 upload CSV/Excel · Say "bar chart" or "pie chart" for visuals</div>
     </div>
   </div>
-
 </div>
+
+<!-- Toast container -->
+<div class="toast-container" id="toastContainer"></div>
 
 <script>
 const API = 'http://localhost:8002';
-let isLoading = false;
+let isLoading       = false;
+let activeSessionId = null;
+let chartCounter    = 0;   // unique IDs for Plotly divs
+
+// Plotly dark layout template
+const PLOTLY_LAYOUT = {
+  paper_bgcolor: '#1c2333',
+  plot_bgcolor:  '#1c2333',
+  font:          { color: '#e6edf3', family: 'DM Sans, sans-serif', size: 12 },
+  margin:        { t: 36, r: 20, b: 48, l: 56 },
+  xaxis:         { gridcolor: '#30363d', tickcolor: '#8b949e', linecolor: '#30363d' },
+  yaxis:         { gridcolor: '#30363d', tickcolor: '#8b949e', linecolor: '#30363d' },
+  colorway:      ['#58a6ff','#39d353','#bc8cff','#d29922','#f85149','#79c0ff','#56d364'],
+  showlegend:    true,
+  legend:        { bgcolor: 'rgba(0,0,0,0)', font: { color: '#8b949e', size: 11 } },
+};
 
 // ── Init ──────────────────────────────────────────────────
 async function init() {
   await checkHealth();
-  await loadStats();
+  await loadSessions();
+  await loadUploads();
 }
 
 async function checkHealth() {
@@ -763,7 +322,7 @@ async function checkHealth() {
     if (d.status === 'running') {
       dot.style.background = 'var(--teal)';
       dot.style.boxShadow  = '0 0 6px var(--teal)';
-      txt.textContent = 'connected';
+      txt.textContent      = d.persistence ? 'connected · sessions on' : 'connected';
     }
   } catch {
     document.getElementById('statusDot').style.background = 'var(--red)';
@@ -771,36 +330,367 @@ async function checkHealth() {
   }
 }
 
-async function loadStats() {
+// ── Sessions ──────────────────────────────────────────────
+async function loadSessions() {
   try {
-    const r = await fetch(`${API}/stats`);
+    const r = await fetch(`${API}/sessions`);
     const d = await r.json();
-    document.getElementById('statTurns').textContent = d.conversation_turns ?? '—';
-    document.getElementById('statAP').textContent    = d.accounts_payable_rows ?? '—';
-    document.getElementById('statRev').textContent   = d.revenue_rows ?? '—';
-    document.getElementById('statJE').textContent    = d.journal_entries_rows ?? '—';
-  } catch {}
+    renderSessionList(d.sessions || []);
+  } catch {
+    document.getElementById('sessionItems').textContent = 'Could not load sessions.';
+  }
+}
+
+function renderSessionList(sessions) {
+  const container = document.getElementById('sessionItems');
+  if (!sessions.length) {
+    container.innerHTML = '<div style="color:var(--dim);font-size:12px;padding:4px 6px">No sessions yet</div>';
+    return;
+  }
+  container.innerHTML = sessions.map(s => {
+    const isActive = s.session_id === activeSessionId;
+    const date     = formatDate(s.updated_at);
+    const title    = escHtml(s.title || 'Untitled');
+    return `
+      <div class="session-item ${isActive ? 'active' : ''}"
+           id="sess-${s.session_id}"
+           onclick="openSession('${s.session_id}')">
+        <div class="session-item-text">
+          <div class="session-title-view" id="title-view-${s.session_id}">${title}</div>
+          <input class="session-title-input" id="title-input-${s.session_id}"
+                 value="${title}"
+                 onblur="commitRename('${s.session_id}')"
+                 onkeydown="renameKeydown(event,'${s.session_id}')"/>
+          <div class="session-date">${date}</div>
+        </div>
+        <div class="session-actions">
+          <button class="session-action-btn" onclick="startRename(event,'${s.session_id}')" title="Rename">✏️</button>
+          <button class="session-action-btn del" onclick="deleteSession(event,'${s.session_id}')" title="Delete">✕</button>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function formatDate(iso) {
+  if (!iso) return '';
+  try {
+    const d    = new Date(iso);
+    const diff = Math.floor((new Date() - d) / 1000);
+    if (diff < 60)    return 'just now';
+    if (diff < 3600)  return `${Math.floor(diff/60)}m ago`;
+    if (diff < 86400) return `${Math.floor(diff/3600)}h ago`;
+    return d.toLocaleDateString();
+  } catch { return ''; }
+}
+
+// ── Rename ────────────────────────────────────────────────
+function startRename(e, sessionId) {
+  e.stopPropagation();
+  const view  = document.getElementById(`title-view-${sessionId}`);
+  const input = document.getElementById(`title-input-${sessionId}`);
+  view.style.display  = 'none';
+  input.style.display = 'block';
+  input.focus();
+  input.select();
+}
+
+function renameKeydown(e, sessionId) {
+  if (e.key === 'Enter')  { e.preventDefault(); commitRename(sessionId); }
+  if (e.key === 'Escape') { cancelRename(sessionId); }
+}
+
+async function commitRename(sessionId) {
+  const input = document.getElementById(`title-input-${sessionId}`);
+  const view  = document.getElementById(`title-view-${sessionId}`);
+  if (!input) return;
+  const newTitle = input.value.trim();
+  if (!newTitle) { cancelRename(sessionId); return; }
+
+  try {
+    await fetch(`${API}/sessions/${sessionId}`, {
+      method:  'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ title: newTitle }),
+    });
+    view.textContent    = newTitle;
+  } catch { /* silent — revert */ }
+
+  view.style.display  = '';
+  input.style.display = 'none';
+}
+
+function cancelRename(sessionId) {
+  const view  = document.getElementById(`title-view-${sessionId}`);
+  const input = document.getElementById(`title-input-${sessionId}`);
+  if (!view || !input) return;
+  input.value         = view.textContent;
+  view.style.display  = '';
+  input.style.display = 'none';
+}
+
+// ── New Chat ──────────────────────────────────────────────
+async function newChat() {
+  try {
+    const r = await fetch(`${API}/sessions`, { method: 'POST' });
+    const d = await r.json();
+    activeSessionId = d.session_id;
+  } catch {
+    activeSessionId = null;
+  }
+  clearMessages();
+  hideBanner();
+  await loadSessions();
+  await loadUploads();
+}
+
+// ── Open session ──────────────────────────────────────────
+async function openSession(sessionId) {
+  if (sessionId === activeSessionId) return;
+  try {
+    const r = await fetch(`${API}/sessions/${sessionId}`);
+    if (!r.ok) throw new Error('Not found');
+    const data = await r.json();
+
+    activeSessionId = sessionId;
+    clearMessages();
+
+    document.querySelectorAll('.session-item').forEach(el => el.classList.remove('active'));
+    const el = document.getElementById(`sess-${sessionId}`);
+    if (el) el.classList.add('active');
+
+    const messages = data.messages || [];
+    if (messages.length) {
+      showBanner(`Restored session · ${messages.length} message${messages.length !== 1 ? 's' : ''}`);
+      for (const msg of messages) {
+        if (msg.role === 'user') {
+          appendUserMessage(msg.content, msg.timestamp);
+        } else {
+          const arts  = msg.artifacts || [];
+          const sqlQ  = arts.find(a => a.artifact_type === 'sql_query');
+          const sqlR  = arts.find(a => a.artifact_type === 'sql_result');
+          const cits  = arts.find(a => a.artifact_type === 'citations');
+          const rexp  = arts.find(a => a.artifact_type === 'route_explanation');
+          const chart = arts.find(a => a.artifact_type === 'chart_spec');
+          const rtype = arts.find(a => a.artifact_type === 'response_type');
+
+          appendAIMessage({
+            answer:            msg.content,
+            pipeline:          msg.pipeline_used || 'sql',
+            response_type:     rtype ? rtype.content : 'answer',
+            chart_hint:        chart ? chart.content.chart_type : 'none',
+            route_explanation: rexp  ? rexp.content  : '',
+            sql:               sqlQ  ? sqlQ.content  : null,
+            raw_data:          sqlR  ? sqlR.content.rows    : [],
+            columns:           sqlR  ? sqlR.content.columns : [],
+            sources:           cits  ? cits.content  : [],
+            _chart_spec:       chart ? chart.content : null,
+          }, msg.timestamp);
+        }
+      }
+    } else {
+      showBanner('Empty session — start typing to begin.');
+    }
+    scrollBottom();
+  } catch {
+    showBanner('Could not restore session.');
+  }
+  await loadUploads();
+}
+
+// ── Delete ────────────────────────────────────────────────
+async function deleteSession(e, sessionId) {
+  e.stopPropagation();
+  try {
+    await fetch(`${API}/sessions/${sessionId}`, { method: 'DELETE' });
+    if (sessionId === activeSessionId) {
+      activeSessionId = null;
+      clearMessages();
+      hideBanner();
+    }
+    await loadSessions();
+    await loadUploads();
+  } catch { /* silent */ }
+}
+
+// ── Uploads (Phase 3 Step 5) ──────────────────────────────
+async function loadUploads() {
+  const section = document.getElementById('uploadsSection');
+  const list    = document.getElementById('uploadsList');
+
+  if (!activeSessionId) {
+    section.classList.add('empty');
+    list.innerHTML = '';
+    return;
+  }
+
+  try {
+    const r = await fetch(`${API}/sessions/${activeSessionId}/uploads`);
+    if (!r.ok) {
+      section.classList.add('empty');
+      list.innerHTML = '';
+      return;
+    }
+    const data = await r.json();
+    renderUploads(data.uploads || []);
+  } catch {
+    section.classList.add('empty');
+    list.innerHTML = '';
+  }
+}
+
+function renderUploads(uploads) {
+  const section = document.getElementById('uploadsSection');
+  const list    = document.getElementById('uploadsList');
+
+  if (!uploads.length) {
+    section.classList.add('empty');
+    list.innerHTML = '';
+    return;
+  }
+
+  section.classList.remove('empty');
+  list.innerHTML = uploads.map(u => {
+    const isRag    = u.target === 'rag';
+    const tagClass = isRag ? 'upload-tag rag' : 'upload-tag';
+    const tagLabel = isRag ? 'RAG' : 'SQL';
+    let meta;
+    if (isRag) {
+      meta = `${u.chunk_count || 0} chunks`;
+    } else {
+      const tbl = (u.table_names && u.table_names.length) ? u.table_names.join(', ') : '?';
+      meta = `${u.row_count || 0} rows · ${tbl}`;
+    }
+    return `
+      <div class="upload-item" title="${escHtml(u.filename)}">
+        <div class="upload-item-text">
+          <div class="upload-filename">${escHtml(u.filename)}</div>
+          <div class="upload-meta"><span class="${tagClass}">${tagLabel}</span>${escHtml(meta)}</div>
+        </div>
+        <button class="upload-delete" onclick="deleteUpload('${u.upload_id}', '${escHtml(u.filename).replace(/'/g, '&#39;')}')" title="Remove this upload">✕</button>
+      </div>`;
+  }).join('');
+}
+
+async function deleteUpload(uploadId, filename) {
+  try {
+    const r = await fetch(`${API}/uploads/${uploadId}`, { method: 'DELETE' });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      showToast('error', 'Could not remove upload', err.detail || 'Server error');
+      return;
+    }
+    showToast('success', 'Upload removed', filename);
+    await loadUploads();
+  } catch (e) {
+    showToast('error', 'Could not remove upload', e.message || 'Network error');
+  }
+}
+
+// ── File upload ───────────────────────────────────────────
+function triggerFileUpload() {
+  if (isLoading) return;
+  document.getElementById('fileInput').click();
+}
+
+async function handleFileSelected(event) {
+  const fileInput = event.target;
+  const file      = fileInput.files[0];
+  fileInput.value = '';   // clear so the same file can be re-uploaded later
+  if (!file) return;
+
+  // If no active session yet, create one first — uploads always belong to a session
+  if (!activeSessionId) {
+    try {
+      const r = await fetch(`${API}/sessions`, { method: 'POST' });
+      const d = await r.json();
+      activeSessionId = d.session_id;
+      await loadSessions();
+    } catch {
+      showToast('error', 'Upload failed', 'Could not create a session');
+      return;
+    }
+  }
+
+  const attachBtn = document.getElementById('attachBtn');
+  attachBtn.disabled = true;
+  showToast('info', 'Uploading...', file.name);
+
+  const formData = new FormData();
+  formData.append('file', file);
+
+  try {
+    const r = await fetch(
+      `${API}/sessions/${activeSessionId}/uploads/ingest`,
+      { method: 'POST', body: formData }
+    );
+
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      const detail = err.detail || `HTTP ${r.status}`;
+      showToast('error', 'Upload failed', `${file.name}: ${detail}`);
+      return;
+    }
+
+    const data = await r.json();
+    const tables = (data.tables_created || []).join(', ') || '(none)';
+    const rows   = data.total_rows ?? 0;
+    showToast(
+      'success',
+      `Uploaded ${data.filename || file.name}`,
+      `${rows} rows · table${data.tables_created.length > 1 ? 's' : ''} ${tables}`
+    );
+
+    await loadUploads();
+  } catch (e) {
+    showToast('error', 'Upload failed', e.message || 'Network error');
+  } finally {
+    attachBtn.disabled = false;
+  }
+}
+
+// ── Toast ─────────────────────────────────────────────────
+function showToast(kind, title, body) {
+  const container = document.getElementById('toastContainer');
+  const toast = document.createElement('div');
+  toast.className = `toast ${kind === 'error' ? 'error' : kind === 'success' ? 'success' : ''}`;
+  toast.innerHTML = `
+    <div class="toast-title">${escHtml(title)}</div>
+    ${body ? `<div class="toast-body">${escHtml(body)}</div>` : ''}
+  `;
+  toast.onclick = () => dismissToast(toast);
+  container.appendChild(toast);
+  // Trigger CSS transition
+  requestAnimationFrame(() => toast.classList.add('show'));
+  // Auto-dismiss after 4 seconds (5 for errors)
+  const timeout = kind === 'error' ? 5500 : 4000;
+  setTimeout(() => dismissToast(toast), timeout);
+}
+
+function dismissToast(toast) {
+  toast.classList.remove('show');
+  setTimeout(() => toast.remove(), 300);
 }
 
 // ── Send message ──────────────────────────────────────────
 async function sendMessage() {
-  const input = document.getElementById('questionInput');
+  const input    = document.getElementById('questionInput');
   const question = input.value.trim();
   if (!question || isLoading) return;
 
   hideWelcome();
+  hideBanner();
   input.value = '';
   autoResize(input);
   setLoading(true);
 
-  const userMsgId = appendUserMessage(question);
+  appendUserMessage(question);
   const loadingEl = appendLoading();
 
   try {
     const res = await fetch(`${API}/chat`, {
-      method: 'POST',
+      method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ question }),
+      body:    JSON.stringify({ question, session_id: activeSessionId }),
     });
 
     if (!res.ok) {
@@ -810,10 +700,15 @@ async function sendMessage() {
 
     const data = await res.json();
     loadingEl.remove();
-    appendAIMessage(data);
-    addToHistorySidebar(question, data.pipeline, userMsgId);
-    await loadStats();
 
+    if (data.session_id) {
+      const wasNew = !activeSessionId;
+      if (wasNew) activeSessionId = data.session_id;
+      await loadSessions();
+      if (wasNew) await loadUploads();
+    }
+
+    appendAIMessage(data);
   } catch (e) {
     loadingEl.remove();
     appendError(e.message);
@@ -828,39 +723,148 @@ function sendQuestion(q) {
   sendMessage();
 }
 
+// ── Plotly chart rendering ────────────────────────────────
+function renderChart(chartType, columns, rows, question) {
+  if (!rows || !rows.length || !columns || !columns.length) return null;
+
+  const divId  = `chart-${++chartCounter}`;
+  const wrap   = document.createElement('div');
+  wrap.className = 'chart-wrap';
+  wrap.innerHTML = `<div id="${divId}" class="chart-inner"></div>`;
+
+  // Detect categorical vs numeric columns
+  const numericCols = [];
+  const labelCols   = [];
+
+  columns.forEach(col => {
+    const vals = rows.map(r => r[col]).filter(v => v != null && v !== '');
+    const numCount = vals.filter(v => !isNaN(parseFloat(v))).length;
+    if (numCount / vals.length > 0.7) numericCols.push(col);
+    else labelCols.push(col);
+  });
+
+  const labelCol   = labelCols[0]   || columns[0];
+  const valueCol   = numericCols[0] || columns[columns.length - 1];
+  const labels     = rows.map(r => String(r[labelCol] ?? ''));
+  const values     = rows.map(r => parseFloat(r[valueCol]) || 0);
+
+  let traces = [];
+  let layout  = { ...PLOTLY_LAYOUT, title: { text: question.slice(0,60), font: { color: '#8b949e', size: 12 } } };
+
+  if (chartType === 'pie') {
+    traces = [{ type: 'pie', labels, values,
+                textinfo: 'label+percent',
+                hovertemplate: '%{label}: %{value:,.0f}<extra></extra>',
+                marker: { colors: PLOTLY_LAYOUT.colorway } }];
+    layout = { ...layout, showlegend: true };
+
+  } else if (chartType === 'line') {
+    // Single row with multiple numeric month columns → transpose to x/y series
+    const monthKeywords = ['jan','feb','mar','apr','may','jun',
+                           'jul','aug','sep','oct','nov','dec','2026','2025'];
+    const isMonthCol = col => monthKeywords.some(k => col.toLowerCase().includes(k));
+    const monthCols  = numericCols.filter(isMonthCol);
+
+    if (rows.length === 1 && monthCols.length > 1) {
+      // Transpose: each month column becomes a point on the x axis
+      const xVals = monthCols.map(c => c.replace(/_2026|_2025/g,'').replace(/_/g,' '));
+      const yVals = monthCols.map(c => parseFloat(rows[0][c]) || 0);
+      const name  = rows[0][labelCol] || 'Value';
+      traces = [{ type: 'scatter', mode: 'lines+markers',
+                  name: String(name), x: xVals, y: yVals,
+                  line: { color: '#58a6ff', width: 2 }, marker: { size: 7 },
+                  hovertemplate: '%{x}: %{y:,.0f}<extra></extra>' }];
+   
+    } else if (numericCols.length > 1) {
+      // Multiple rows, multiple numeric cols → one trace per numeric col
+      const labelVals = rows.map(r => String(r[labelCol] ?? ''));
+      traces = numericCols.map((col, i) => ({
+        type: 'scatter', mode: 'lines+markers', name: col,
+        x: labelVals, y: rows.map(r => parseFloat(r[col]) || 0),
+        line: { color: PLOTLY_LAYOUT.colorway[i % PLOTLY_LAYOUT.colorway.length], width: 2 },
+        marker: { size: 6 },
+        hovertemplate: `${col}: %{y:,.0f}<extra></extra>`,
+      }));
+    } else {
+      traces = [{ type: 'scatter', mode: 'lines+markers',
+                  x: labels, y: values,
+                  line: { color: '#58a6ff', width: 2 }, marker: { size: 6 },
+                  hovertemplate: '%{x}: %{y:,.0f}<extra></extra>' }];
+    }
+
+  } else {
+    // bar (default)
+    if (numericCols.length > 1) {
+      traces = numericCols.map((col, i) => ({
+        type: 'bar', name: col,
+        x: rows.map(r => String(r[labelCol] ?? '')),
+        y: rows.map(r => parseFloat(r[col]) || 0),
+        marker: { color: PLOTLY_LAYOUT.colorway[i % PLOTLY_LAYOUT.colorway.length] },
+        hovertemplate: `${col}: %{y:,.0f}<extra></extra>`,
+      }));
+    } else {
+      traces = [{ type: 'bar', x: labels, y: values,
+                  marker: { color: '#58a6ff' },
+                  hovertemplate: '%{x}: %{y:,.0f}<extra></extra>' }];
+    }
+  }
+
+  // Render after DOM insert (requestAnimationFrame)
+  setTimeout(() => {
+    try {
+      Plotly.newPlot(divId, traces, layout, {
+        responsive: true, displayModeBar: false,
+      });
+    } catch (e) {
+      console.warn('Plotly render error:', e);
+    }
+  }, 50);
+
+  return wrap;
+}
+
 // ── DOM helpers ───────────────────────────────────────────
 function hideWelcome() {
   const w = document.getElementById('welcome');
   if (w) w.remove();
 }
+function clearMessages() {
+  document.getElementById('messages').innerHTML =
+    `<div class="welcome" id="welcome">
+      <div class="welcome-icon">🧮</div>
+      <h2>CoReckoner</h2>
+      <p>Ask questions about your QuickBooks data or IRS payroll tax regulations. Upload your own CSV or Excel via 📎 to query it the same way.</p>
+      <div class="chips">
+        <span class="chip chip-sql">Text-to-SQL</span>
+        <span class="chip chip-rag">RAG / ChromaDB</span>
+        <span class="chip chip-both">Hybrid router</span>
+      </div>
+    </div>`;
+}
+function showBanner(text) {
+  const b = document.getElementById('restoreBanner');
+  b.textContent = text;
+  b.classList.add('visible');
+}
+function hideBanner() {
+  document.getElementById('restoreBanner').classList.remove('visible');
+}
 
-function appendUserMessage(question) {
-  const now = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
-  const msgId = `msg-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-  const el = document.createElement('div');
+function appendUserMessage(question, ts) {
+  const time = ts ? formatDate(ts) : new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+  const el   = document.createElement('div');
   el.className = 'msg msg-user';
-  el.id = msgId;
   el.innerHTML = `
     <div class="msg-avatar avatar-user">👤</div>
     <div class="msg-body">
       <div class="msg-meta">
         <span class="msg-name">You</span>
-        <span class="msg-time">${now}</span>
+        <span class="msg-time">${time}</span>
       </div>
       <div class="msg-text">${escHtml(question)}</div>
     </div>`;
   document.getElementById('messages').appendChild(el);
-
-  // Auto-collapse sample questions after first question
-  if (conversationLog.length === 0) {
-    const samplePanel = document.getElementById('sampleQuestions');
-    const sampleToggle = document.getElementById('sampleToggle');
-    if (samplePanel) samplePanel.style.display = 'none';
-    if (sampleToggle) sampleToggle.classList.add('collapsed');
-  }
-
   scrollBottom();
-  return msgId;
 }
 
 function appendLoading() {
@@ -876,238 +880,106 @@ function appendLoading() {
   return el;
 }
 
-function appendAIMessage(data) {
-  const now = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
-  const pipeline = data.pipeline;
-  const badgeClass = `badge-${pipeline}`;
-  const badgeLabel = pipeline.toUpperCase();
+function appendAIMessage(data, ts) {
+  const time         = ts ? formatDate(ts) : new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+  const pipeline     = data.pipeline || 'sql';
+  const responseType = data.response_type || 'answer';
+  const chartHint    = data.chart_hint || 'none';
 
-  let extra = '';
+  // Response type badge label + class
+  const rtLabels = {
+    answer:        '',
+    no_data:       'No data',
+    sql_error:     'SQL error',
+    rag_not_found: 'Not found in docs',
+    system_error:  'System error',
+  };
+  const rtLabel  = rtLabels[responseType] || '';
+  const rtBadge  = rtLabel
+    ? `<span class="rtype-badge rtype-${responseType}">${rtLabel}</span>` : '';
 
-  // SQL result table
-  if (data.sql && data.raw_data && data.raw_data.length > 0) {
-    const cols = data.columns;
-    const rows = data.raw_data;
-    let tableHTML = `<table class="data-table"><thead><tr>`;
-    cols.forEach(c => { tableHTML += `<th>${escHtml(c)}</th>`; });
-    tableHTML += `</tr></thead><tbody>`;
-    rows.forEach(row => {
-      tableHTML += '<tr>';
-      cols.forEach(c => { tableHTML += `<td>${escHtml(String(row[c] ?? ''))}</td>`; });
-      tableHTML += '</tr>';
-    });
-    tableHTML += '</tbody></table>';
+  const routeHint = data.route_explanation
+    ? `<span class="route-hint">${escHtml(data.route_explanation)}</span>` : '';
 
-    extra += `
-      <div class="sql-result">
-        <div class="sql-header">🔧 Generated SQL</div>
-        <div class="sql-query-text">${escHtml(data.sql)}</div>
-        <div class="sql-header">📊 Query result (${rows.length} row${rows.length!==1?'s':''})</div>
-        ${tableHTML}
-      </div>`;
-  }
-
-// Plotly chart for SQL results
-  if (data.chart_spec) {
-    const chartId = `chart-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-    extra += `
-      <div class="chart-container">
-        <div class="chart-header">📈 ${escHtml(data.chart_spec.title || 'Visualization')}</div>
-        <div id="${chartId}" class="chart-render"></div>
-      </div>`;
-
-    // Render after DOM insertion (setTimeout pushes to next tick)
-    setTimeout(() => renderChart(chartId, data.chart_spec), 0);
-  }
-
-// RAG sources — grouped by source document
-  if (data.sources && data.sources.length > 0) {
-    // Group by source_doc
-    const grouped = {};
-    data.sources.forEach(s => {
-      const key = s.source_doc || 'Unknown';
-      if (!grouped[key]) grouped[key] = [];
-      grouped[key].push(s);
-    });
-
-    const docCount = Object.keys(grouped).length;
-    const headerLabel = docCount > 1
-      ? `📚 Sources (${docCount} documents)`
-      : `📄 Source`;
-
-    let srcHTML = `<div class="sources-header">${headerLabel}</div><div class="sources">`;
-    for (const [docName, items] of Object.entries(grouped)) {
-      srcHTML += `<div class="source-group">
-        <div class="source-doc-name">${escHtml(docName)}</div>`;
-      items.forEach(s => {
-        srcHTML += `<div class="source-item">
-          <span class="source-page">p.${escHtml(String(s.page))}</span>
-          ${escHtml(s.preview)}…
-        </div>`;
-      });
-      srcHTML += '</div>';
-    }
-    srcHTML += '</div>';
-    extra += srcHTML;
-  }
-
-  const el = document.createElement('div');
-  el.className = 'msg';
-  el.innerHTML = `
+  const msgEl = document.createElement('div');
+  msgEl.className = 'msg';
+  msgEl.innerHTML = `
     <div class="msg-avatar avatar-ai">🤖</div>
     <div class="msg-body">
       <div class="msg-meta">
-        <span class="msg-name">Accounting AI</span>
-        <span class="msg-time">${now}</span>
-        <span class="pipeline-badge ${badgeClass}">${badgeLabel}</span>
-        <span style="font-size:11px;color:var(--text-dim)">${escHtml(data.route_explanation)}</span>
+        <span class="msg-name">CoReckoner</span>
+        <span class="msg-time">${time}</span>
+        <span class="pipeline-badge badge-${pipeline}">${pipeline.toUpperCase()}</span>
+        ${rtBadge}
+        ${routeHint}
       </div>
       <div class="msg-text">${escHtml(data.answer)}</div>
-      ${extra}
     </div>`;
-  document.getElementById('messages').appendChild(el);
+
+  const body = msgEl.querySelector('.msg-body');
+
+  // SQL result table
+  if (data.sql && data.raw_data && data.raw_data.length > 0) {
+    const cols = data.columns || [];
+    const rows = data.raw_data || [];
+    let tbl = `<table class="data-table"><thead><tr>`;
+    cols.forEach(c => { tbl += `<th>${escHtml(c)}</th>`; });
+    tbl += `</tr></thead><tbody>`;
+    rows.forEach(row => {
+      tbl += '<tr>';
+      cols.forEach(c => { tbl += `<td>${escHtml(String(row[c] ?? ''))}</td>`; });
+      tbl += '</tr>';
+    });
+    tbl += '</tbody></table>';
+
+    const sqlBlock = document.createElement('div');
+    sqlBlock.className = 'sql-result';
+    sqlBlock.innerHTML = `
+      <div class="sql-header">🔧 Generated SQL</div>
+      <div class="sql-query-text">${escHtml(data.sql)}</div>
+      <div class="sql-header">📊 Query result (${rows.length} row${rows.length!==1?'s':''})</div>
+      ${tbl}`;
+    body.appendChild(sqlBlock);
+
+    // Plotly chart
+    const spec = data._chart_spec;
+    const type = spec ? spec.chart_type : chartHint;
+    if (type && type !== 'none') {
+      const chartCols = spec ? spec.columns : cols;
+      const chartRows = spec ? spec.rows    : rows;
+      const chartQ    = spec ? spec.question : (data.question || '');
+      const chartEl   = renderChart(type, chartCols, chartRows, chartQ);
+      if (chartEl) body.appendChild(chartEl);
+    }
+  }
+
+  // Citations
+  if (data.sources && data.sources.length > 0) {
+    let srcs = '<div class="sources">';
+    data.sources.forEach(s => {
+      srcs += `<div class="source-item"><span class="source-page">Page ${s.page}</span>${escHtml(s.preview || '')}...</div>`;
+    });
+    srcs += '</div>';
+    const citEl = document.createElement('div');
+    citEl.innerHTML = srcs;
+    body.appendChild(citEl.firstChild);
+  }
+
+  document.getElementById('messages').appendChild(msgEl);
 }
 
 function appendError(msg) {
-  // Always log full technical details to console for debugging
-  console.error('[App2 error]', msg);
-
-  // Categorize the error for friendlier user-facing copy
-  const lower = (msg || '').toLowerCase();
-  let userMsg, hint;
-
-  if (lower.includes('openai') || lower.includes('api key') || lower.includes('apikey')) {
-    userMsg = "I'm having trouble reaching the AI service right now.";
-    hint = "Please try again in a moment. If this keeps happening, check that the OPENAI_API_KEY is set.";
-  } else if (lower.includes('database') || lower.includes('sqlite') || lower.includes('not found')) {
-    userMsg = "I couldn't access the accounting database.";
-    hint = "Make sure the database file exists and the server has restarted recently.";
-  } else if (lower.includes('chroma') || lower.includes('vector')) {
-    userMsg = "I couldn't access the IRS publication index.";
-    hint = "The ChromaDB index may need to be rebuilt. Try restarting the server.";
-  } else if (lower.includes('failed to fetch') || lower.includes('networkerror') || lower.includes('connection')) {
-    userMsg = "I can't reach the server right now.";
-    hint = "Check that the FastAPI server is running on port 8002.";
-  } else {
-    userMsg = "Something went wrong while processing your question.";
-    hint = "Please try again, or rephrase your question.";
-  }
-
   const el = document.createElement('div');
   el.className = 'msg';
   el.innerHTML = `
     <div class="msg-avatar avatar-ai">⚠️</div>
     <div class="msg-body">
-      <div class="msg-meta">
-        <span class="msg-name">Accounting AI</span>
-        <span class="msg-time">${new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</span>
-      </div>
-      <div class="msg-text msg-error">
-        <strong>${userMsg}</strong><br>
-        <span class="error-hint">${hint}</span>
+      <div class="msg-text" style="border-color:var(--red);color:var(--red)">
+        Error: ${escHtml(msg)}<br>
+        <span style="font-size:12px;color:var(--dim)">Make sure the server is running and your .env has OPENAI_API_KEY.</span>
       </div>
     </div>`;
   document.getElementById('messages').appendChild(el);
-  scrollBottom();
-}
-
-// ── New chat (replaces old clearHistory) ──────────────────
-async function newChat() {
-  await fetch(`${API}/history`, { method: 'DELETE' });
-  document.getElementById('messages').innerHTML = '';
-  
-  // Restore welcome screen
-  const welcomeHTML = `
-    <div class="welcome" id="welcome">
-      <div class="welcome-icon">🧮</div>
-      <h2>Accounting AI Chatbot</h2>
-      <p>Ask questions about your QuickBooks data or IRS payroll tax regulations. The system automatically routes your question to the right pipeline.</p>
-      <div class="pipeline-chips">
-        <span class="chip chip-sql">Text-to-SQL</span>
-        <span class="chip chip-rag">RAG / ChromaDB</span>
-        <span class="chip chip-both">Hybrid router</span>
-      </div>
-    </div>`;
-  document.getElementById('messages').innerHTML = welcomeHTML;
-
-  // Clear history sidebar
-  conversationLog = [];
-  renderHistorySidebar();
-
-  // Show toast confirmation
-  const toast = document.getElementById('newchatToast');
-  toast.classList.add('show');
-  setTimeout(() => toast.classList.remove('show'), 2000);
-
-  // Re-expand sample questions for new chat
-  const samplePanel = document.getElementById('sampleQuestions');
-  const sampleToggle = document.getElementById('sampleToggle');
-  samplePanel.style.display = 'block';
-  sampleToggle.classList.remove('collapsed');
-
-  await loadStats();
-}
-
-// Backward-compat alias (in case anything still calls clearHistory)
-async function clearHistory() { return newChat(); }
-
-// ── Sample questions toggle ───────────────────────────────
-function toggleSampleQuestions() {
-  const panel = document.getElementById('sampleQuestions');
-  const toggle = document.getElementById('sampleToggle');
-  const isCollapsed = panel.style.display === 'none';
-  panel.style.display = isCollapsed ? 'block' : 'none';
-  toggle.classList.toggle('collapsed', !isCollapsed);
-}
-
-// ── Conversation history sidebar ──────────────────────────
-let conversationLog = [];  // { turn, question, pipeline, msgId }
-
-function addToHistorySidebar(question, pipeline, msgId) {
-  conversationLog.push({
-    turn: conversationLog.length + 1,
-    question: question,
-    pipeline: pipeline,
-    msgId: msgId,
-  });
-  renderHistorySidebar();
-}
-
-function renderHistorySidebar() {
-  const section = document.getElementById('historySection');
-  const list = document.getElementById('historyList');
-
-  if (conversationLog.length === 0) {
-    section.style.display = 'none';
-    return;
-  }
-
-  section.style.display = 'block';
-  list.innerHTML = '';
-
-  conversationLog.forEach(item => {
-    const truncated = item.question.length > 50
-      ? item.question.slice(0, 50) + '…'
-      : item.question;
-
-    const div = document.createElement('div');
-    div.className = 'history-item';
-    div.onclick = () => jumpToMessage(item.msgId);
-    div.innerHTML = `
-      <span class="history-num">${item.turn}.</span>
-      <span class="history-text">${escHtml(truncated)}</span>
-      <span class="history-badge badge-${item.pipeline}">${item.pipeline.toUpperCase()}</span>
-    `;
-    list.appendChild(div);
-  });
-}
-
-function jumpToMessage(msgId) {
-  const el = document.getElementById(msgId);
-  if (!el) return;
-  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  el.classList.add('msg-highlight');
-  setTimeout(() => el.classList.remove('msg-highlight'), 1600);
 }
 
 // ── Utils ─────────────────────────────────────────────────
@@ -1115,91 +987,21 @@ function setLoading(v) {
   isLoading = v;
   document.getElementById('sendBtn').disabled = v;
 }
-
 function scrollBottom() {
   const m = document.getElementById('messages');
   m.scrollTop = m.scrollHeight;
 }
-
 function handleKey(e) {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
 }
-
 function autoResize(el) {
   el.style.height = 'auto';
   el.style.height = Math.min(el.scrollHeight, 120) + 'px';
 }
-
 function escHtml(s) {
   return String(s)
-    .replace(/&/g,'&amp;')
-    .replace(/</g,'&lt;')
-    .replace(/>/g,'&gt;')
-    .replace(/"/g,'&quot;');
-}
-
-function renderChart(elementId, spec) {
-  const el = document.getElementById(elementId);
-  if (!el || typeof Plotly === 'undefined') return;
-
-  const layout = {
-    paper_bgcolor: 'rgba(0,0,0,0)',
-    plot_bgcolor: 'rgba(0,0,0,0)',
-    font: { family: 'DM Sans, sans-serif', color: '#e6edf3', size: 12 },
-    margin: { t: 20, r: 20, b: 50, l: 60 },
-    xaxis: {
-      title: spec.x_label || '',
-      gridcolor: '#30363d',
-      zerolinecolor: '#30363d',
-      tickfont: { color: '#8b949e' },
-    },
-    yaxis: {
-      title: spec.y_label || '',
-      gridcolor: '#30363d',
-      zerolinecolor: '#30363d',
-      tickfont: { color: '#8b949e' },
-    },
-    showlegend: spec.type === 'line' || spec.type === 'pie',
-    legend: { font: { color: '#e6edf3' } },
-  };
-
-  let traces = [];
-
-  if (spec.type === 'bar') {
-    traces = [{
-      type: 'bar',
-      x: spec.x,
-      y: spec.y,
-      marker: { color: '#58a6ff' },
-    }];
-  } else if (spec.type === 'pie') {
-    traces = [{
-      type: 'pie',
-      labels: spec.labels,
-      values: spec.values,
-      marker: {
-        colors: ['#58a6ff', '#39d353', '#bc8cff', '#d29922', '#f85149', '#39c5cf'],
-      },
-      textfont: { color: '#e6edf3' },
-    }];
-    // Pie charts don't use x/y axes
-    delete layout.xaxis;
-    delete layout.yaxis;
-  } else if (spec.type === 'line') {
-    traces = spec.series.map((s, i) => ({
-      type: 'scatter',
-      mode: 'lines+markers',
-      name: s.name,
-      x: s.x,
-      y: s.y,
-      line: { color: ['#58a6ff', '#39d353', '#bc8cff', '#d29922'][i % 4] },
-    }));
-  }
-
-  Plotly.newPlot(el, traces, layout, {
-    displayModeBar: false,
-    responsive: true,
-  });
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
 init();

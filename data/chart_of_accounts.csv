@@ -1,0 +1,60 @@
+account_code,account_name,account_type,account_subtype,normal_balance,is_active,description
+1000,Cash - Operating,Asset,Current Asset,Debit,Yes,Primary operating checking account
+1010,Cash - Payroll,Asset,Current Asset,Debit,Yes,Dedicated payroll account
+1020,Petty Cash,Asset,Current Asset,Debit,Yes,Office petty cash fund
+1100,Accounts Receivable,Asset,Current Asset,Debit,Yes,Amounts owed by clients
+1110,Allowance for Doubtful Accounts,Asset,Current Asset,Credit,Yes,Estimated uncollectible receivables
+1200,Unbilled Revenue (WIP),Asset,Current Asset,Debit,Yes,Work in progress not yet invoiced
+1300,Prepaid Insurance,Asset,Current Asset,Debit,Yes,Insurance paid in advance
+1310,Prepaid Rent,Asset,Current Asset,Debit,Yes,Rent paid in advance
+1320,Prepaid Software Subscriptions,Asset,Current Asset,Debit,Yes,Annual software licenses prepaid
+1400,Employee Advances,Asset,Current Asset,Debit,Yes,Advances to employees
+1500,Office Equipment,Asset,Fixed Asset,Debit,Yes,Computers laptops printers
+1510,Furniture and Fixtures,Asset,Fixed Asset,Debit,Yes,Desks chairs conference room furniture
+1520,Leasehold Improvements,Asset,Fixed Asset,Debit,Yes,Office build-out improvements
+1590,Accumulated Depreciation,Asset,Fixed Asset,Credit,Yes,Total depreciation to date
+1600,Security Deposit,Asset,Other Asset,Debit,Yes,Office lease security deposit
+2000,Accounts Payable,Liability,Current Liability,Credit,Yes,Amounts owed to vendors
+2010,Accrued Salaries,Liability,Current Liability,Credit,Yes,Salaries earned but not yet paid
+2020,Accrued Payroll Taxes,Liability,Current Liability,Credit,Yes,FICA and income tax withheld
+2030,Accrued PTO,Liability,Current Liability,Credit,Yes,Earned but unused paid time off
+2040,Sales Tax Payable,Liability,Current Liability,Credit,Yes,State sales tax collected
+2050,Deferred Revenue,Liability,Current Liability,Credit,Yes,Retainers received not yet earned
+2100,Federal Income Tax Payable,Liability,Current Liability,Credit,Yes,Corporate income tax owed
+2110,State Income Tax Payable,Liability,Current Liability,Credit,Yes,State income tax owed
+2200,Notes Payable - Short Term,Liability,Current Liability,Credit,Yes,Loans due within 12 months
+2300,Notes Payable - Long Term,Liability,Long-Term Liability,Credit,Yes,Loans due beyond 12 months
+2400,Lease Liability - Operating,Liability,Long-Term Liability,Credit,Yes,ASC 842 operating lease liability
+3000,Common Stock,Equity,Equity,Credit,Yes,Issued share capital
+3100,Retained Earnings,Equity,Equity,Credit,Yes,Cumulative earnings retained
+3200,Owner Distributions,Equity,Equity,Debit,Yes,Distributions to shareholders
+3900,Current Year Earnings,Equity,Equity,Credit,Yes,Net income current year
+4000,Audit Services Revenue,Revenue,Operating Revenue,Credit,Yes,Revenue from audit engagements
+4010,Tax Preparation Revenue,Revenue,Operating Revenue,Credit,Yes,Revenue from tax filing services
+4020,Accounting Services Revenue,Revenue,Operating Revenue,Credit,Yes,Monthly bookkeeping and accounting
+4030,Consulting Revenue,Revenue,Operating Revenue,Credit,Yes,Advisory and consulting fees
+4040,Bookkeeping Revenue,Revenue,Operating Revenue,Credit,Yes,Bookkeeping services
+4050,Payroll Services Revenue,Revenue,Operating Revenue,Credit,Yes,Payroll processing fees
+4060,CFO Advisory Revenue,Revenue,Operating Revenue,Credit,Yes,Fractional CFO services
+4900,Interest Income,Revenue,Other Revenue,Credit,Yes,Interest earned on deposits
+5000,Salaries - Professional Staff,Expense,Cost of Services,Debit,Yes,CPA and staff accountant salaries
+5010,Salaries - Administrative,Expense,Cost of Services,Debit,Yes,Admin and support staff salaries
+5020,Payroll Taxes - Employer,Expense,Cost of Services,Debit,Yes,Employer FICA and unemployment
+5030,Employee Benefits,Expense,Cost of Services,Debit,Yes,Health dental vision insurance
+5040,Contract Labor,Expense,Cost of Services,Debit,Yes,Freelance and contract CPAs
+5100,Rent Expense,Expense,Operating Expense,Debit,Yes,Office space rental
+5110,Utilities,Expense,Operating Expense,Debit,Yes,Electric internet phone
+5120,Office Supplies,Expense,Operating Expense,Debit,Yes,Paper toner misc office items
+5130,Software Subscriptions,Expense,Operating Expense,Debit,Yes,QuickBooks Xero practice management
+5140,Professional Development,Expense,Operating Expense,Debit,Yes,CPE credits conferences training
+5150,Professional Liability Insurance,Expense,Operating Expense,Debit,Yes,E&O malpractice insurance
+5160,Marketing and Advertising,Expense,Operating Expense,Debit,Yes,Website ads referral fees
+5170,Meals and Entertainment,Expense,Operating Expense,Debit,Yes,Client meals business entertainment
+5180,Travel,Expense,Operating Expense,Debit,Yes,Business travel transportation
+5190,Telephone,Expense,Operating Expense,Debit,Yes,Mobile and office phone lines
+5200,Depreciation Expense,Expense,Operating Expense,Debit,Yes,Monthly fixed asset depreciation
+5210,Amortization Expense,Expense,Operating Expense,Debit,Yes,Intangible asset amortization
+5220,Bank Charges,Expense,Operating Expense,Debit,Yes,Banking and wire transfer fees
+5230,Dues and Subscriptions,Expense,Operating Expense,Debit,Yes,AICPA NYSSCPA state board fees
+5240,Bad Debt Expense,Expense,Operating Expense,Debit,Yes,Uncollectible accounts written off
+5300,Interest Expense,Expense,Other Expense,Debit,Yes,Interest on loans and credit lines

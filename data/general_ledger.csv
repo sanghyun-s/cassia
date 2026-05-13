@@ -1,0 +1,140 @@
+txn_id,date,account_code,account_name,debit,credit,description,reference,client_vendor,category,period,entered_by
+GL-0001,2026-01-02,3100,Retained Earnings,,125000.00,Opening retained earnings balance,OPEN-2026,,Equity,2026-01,System
+GL-0002,2026-01-02,1000,Cash - Operating,210000.00,,Opening cash balance,OPEN-2026,,Asset,2026-01,System
+GL-0003,2026-01-02,1100,Accounts Receivable,87500.00,,Opening AR balance,OPEN-2026,,Asset,2026-01,System
+GL-0004,2026-01-02,1500,Office Equipment,48000.00,,Opening fixed assets,OPEN-2026,,Asset,2026-01,System
+GL-0005,2026-01-02,1510,Furniture and Fixtures,22000.00,,Opening furniture,OPEN-2026,,Asset,2026-01,System
+GL-0006,2026-01-02,1590,Accumulated Depreciation,,18500.00,Opening accumulated depreciation,OPEN-2026,,Asset,2026-01,System
+GL-0007,2026-01-02,1600,Security Deposit,15000.00,,Office lease security deposit,OPEN-2026,,Asset,2026-01,System
+GL-0008,2026-01-02,2000,Accounts Payable,,28400.00,Opening AP balance,OPEN-2026,,Liability,2026-01,System
+GL-0009,2026-01-02,2300,Notes Payable - Long Term,,75000.00,Equipment financing loan,OPEN-2026,,Liability,2026-01,System
+GL-0010,2026-01-02,3000,Common Stock,,100000.00,Issued share capital,OPEN-2026,,Equity,2026-01,System
+GL-0011,2026-01-05,4020,Accounting Services Revenue,,12500.00,January retainer - Apex Manufacturing,INV-2026-001,Apex Manufacturing,Revenue,2026-01,Sarah K
+GL-0012,2026-01-05,1100,Accounts Receivable,12500.00,,Invoice to Apex Manufacturing,INV-2026-001,Apex Manufacturing,Asset,2026-01,Sarah K
+GL-0013,2026-01-06,4000,Audit Services Revenue,,22000.00,Q4 2025 audit - Crest Healthcare,INV-2026-002,Crest Healthcare,Revenue,2026-01,Mike R
+GL-0014,2026-01-06,1100,Accounts Receivable,22000.00,,Invoice to Crest Healthcare,INV-2026-002,Crest Healthcare,Asset,2026-01,Mike R
+GL-0015,2026-01-08,4030,Consulting Revenue,,31000.00,January advisory - Frontier Tech,INV-2026-003,Frontier Tech,Revenue,2026-01,Sarah K
+GL-0016,2026-01-08,1100,Accounts Receivable,31000.00,,Invoice to Frontier Tech,INV-2026-003,Frontier Tech,Asset,2026-01,Sarah K
+GL-0017,2026-01-10,4010,Tax Preparation Revenue,,8200.00,2025 tax prep - BlueStar Retail,INV-2026-004,BlueStar Retail,Revenue,2026-01,James L
+GL-0018,2026-01-10,1100,Accounts Receivable,8200.00,,Invoice to BlueStar Retail,INV-2026-004,BlueStar Retail,Asset,2026-01,James L
+GL-0019,2026-01-12,4040,Bookkeeping Revenue,,9400.00,January bookkeeping - Titan Wholesale,INV-2026-005,Titan Wholesale,Revenue,2026-01,Amy C
+GL-0020,2026-01-12,1100,Accounts Receivable,9400.00,,Invoice to Titan Wholesale,INV-2026-005,Titan Wholesale,Asset,2026-01,Amy C
+GL-0021,2026-01-15,5000,Salaries - Professional Staff,68000.00,,Semi-monthly payroll - professional staff,PR-2026-01A,,Expense,2026-01,Payroll
+GL-0022,2026-01-15,5010,Salaries - Administrative,18000.00,,Semi-monthly payroll - admin staff,PR-2026-01A,,Expense,2026-01,Payroll
+GL-0023,2026-01-15,5020,Payroll Taxes - Employer,6579.00,,Employer FICA Jan 1-15,PR-2026-01A,,Expense,2026-01,Payroll
+GL-0024,2026-01-15,2020,Accrued Payroll Taxes,,8653.00,Federal taxes withheld Jan 1-15,PR-2026-01A,,Liability,2026-01,Payroll
+GL-0025,2026-01-15,1010,Cash - Payroll,,83926.00,Net payroll disbursement Jan 1-15,PR-2026-01A,,Asset,2026-01,Payroll
+GL-0026,2026-01-15,5100,Rent Expense,5500.00,,January office rent - WeWork,RENT-01-2026,WeWork,Expense,2026-01,Amy C
+GL-0027,2026-01-15,2000,Accounts Payable,,5500.00,WeWork January invoice,RENT-01-2026,WeWork,Liability,2026-01,Amy C
+GL-0028,2026-01-15,1300,Prepaid Insurance,18000.00,,Annual E&O insurance premium paid,INS-2026,Travelers Insurance,Asset,2026-01,Amy C
+GL-0029,2026-01-15,1000,Cash - Operating,,18000.00,E&O insurance payment,INS-2026,Travelers Insurance,Asset,2026-01,Amy C
+GL-0030,2026-01-18,1000,Cash - Operating,12500.00,,Payment received - Apex Manufacturing,REC-001,Apex Manufacturing,Asset,2026-01,Sarah K
+GL-0031,2026-01-18,1100,Accounts Receivable,,12500.00,AR cleared - Apex Manufacturing,REC-001,Apex Manufacturing,Asset,2026-01,Sarah K
+GL-0032,2026-01-20,5130,Software Subscriptions,3800.00,,AWS January cloud services,SW-001,Amazon Web Services,Expense,2026-01,Amy C
+GL-0033,2026-01-20,2000,Accounts Payable,,3800.00,AWS January invoice,SW-001,Amazon Web Services,Liability,2026-01,Amy C
+GL-0034,2026-01-22,4030,Consulting Revenue,,42000.00,January strategy - Westside Developers,INV-2026-006,Westside Developers,Revenue,2026-01,Mike R
+GL-0035,2026-01-22,1100,Accounts Receivable,42000.00,,Invoice to Westside Developers,INV-2026-006,Westside Developers,Asset,2026-01,Mike R
+GL-0036,2026-01-25,1000,Cash - Operating,22000.00,,Payment received - Crest Healthcare,REC-002,Crest Healthcare,Asset,2026-01,Mike R
+GL-0037,2026-01-25,1100,Accounts Receivable,,22000.00,AR cleared - Crest Healthcare,REC-002,Crest Healthcare,Asset,2026-01,Mike R
+GL-0038,2026-01-28,2000,Accounts Payable,5500.00,,Paid WeWork January rent,PAY-001,WeWork,Liability,2026-01,Amy C
+GL-0039,2026-01-28,1000,Cash - Operating,,5500.00,WeWork rent payment,PAY-001,WeWork,Asset,2026-01,Amy C
+GL-0040,2026-01-31,5200,Depreciation Expense,1458.00,,Monthly depreciation - equipment and furniture,DEP-01-2026,,Expense,2026-01,System
+GL-0041,2026-01-31,1590,Accumulated Depreciation,,1458.00,Monthly depreciation entry,DEP-01-2026,,Asset,2026-01,System
+GL-0042,2026-01-31,5150,Professional Liability Insurance,1500.00,,Monthly E&O insurance allocation,ADJ-01-2026,,Expense,2026-01,System
+GL-0043,2026-01-31,1300,Prepaid Insurance,,1500.00,Monthly prepaid insurance amortization,ADJ-01-2026,,Asset,2026-01,System
+GL-0044,2026-01-31,2010,Accrued Salaries,86000.00,,Reverse accrual - Jan semi-monthly payroll,REV-01-2026,,Liability,2026-01,System
+GL-0045,2026-01-31,5000,Salaries - Professional Staff,,68000.00,Salary reversal Jan 31,REV-01-2026,,Expense,2026-01,System
+GL-0046,2026-01-31,5010,Salaries - Administrative,,18000.00,Admin salary reversal Jan 31,REV-01-2026,,Expense,2026-01,System
+GL-0047,2026-02-02,4000,Audit Services Revenue,,22000.00,February audit - Crest Healthcare,INV-2026-007,Crest Healthcare,Revenue,2026-02,Mike R
+GL-0048,2026-02-02,1100,Accounts Receivable,22000.00,,Invoice to Crest Healthcare Feb,INV-2026-007,Crest Healthcare,Asset,2026-02,Mike R
+GL-0049,2026-02-05,4020,Accounting Services Revenue,,12500.00,February retainer - Apex Manufacturing,INV-2026-008,Apex Manufacturing,Revenue,2026-02,Sarah K
+GL-0050,2026-02-05,1100,Accounts Receivable,12500.00,,Invoice Apex Feb,INV-2026-008,Apex Manufacturing,Asset,2026-02,Sarah K
+GL-0051,2026-02-08,4030,Consulting Revenue,,55000.00,February advisory - Zenith Software,INV-2026-009,Zenith Software,Revenue,2026-02,Mike R
+GL-0052,2026-02-08,1100,Accounts Receivable,55000.00,,Invoice Zenith Feb,INV-2026-009,Zenith Software,Asset,2026-02,Mike R
+GL-0053,2026-02-10,4010,Tax Preparation Revenue,,8200.00,2025 tax prep - BlueStar Retail,INV-2026-010,BlueStar Retail,Revenue,2026-02,James L
+GL-0054,2026-02-10,1100,Accounts Receivable,8200.00,,Invoice BlueStar Feb,INV-2026-010,BlueStar Retail,Asset,2026-02,James L
+GL-0055,2026-02-12,4000,Audit Services Revenue,,19500.00,February audit - NorthStar Energy,INV-2026-011,NorthStar Energy,Revenue,2026-02,Mike R
+GL-0056,2026-02-12,1100,Accounts Receivable,19500.00,,Invoice NorthStar Feb,INV-2026-011,NorthStar Energy,Asset,2026-02,Mike R
+GL-0057,2026-02-15,5000,Salaries - Professional Staff,68000.00,,Semi-monthly payroll - professional staff,PR-2026-02A,,Expense,2026-02,Payroll
+GL-0058,2026-02-15,5010,Salaries - Administrative,18000.00,,Semi-monthly payroll - admin,PR-2026-02A,,Expense,2026-02,Payroll
+GL-0059,2026-02-15,5020,Payroll Taxes - Employer,6579.00,,Employer FICA Feb 1-15,PR-2026-02A,,Expense,2026-02,Payroll
+GL-0060,2026-02-15,1010,Cash - Payroll,,92579.00,Net payroll Feb 1-15,PR-2026-02A,,Asset,2026-02,Payroll
+GL-0061,2026-02-15,5100,Rent Expense,5500.00,,February office rent,RENT-02-2026,WeWork,Expense,2026-02,Amy C
+GL-0062,2026-02-15,2000,Accounts Payable,,5500.00,WeWork Feb invoice,RENT-02-2026,WeWork,Liability,2026-02,Amy C
+GL-0063,2026-02-18,4030,Consulting Revenue,,28000.00,Feb consulting - Liberty Insurance,INV-2026-012,Liberty Insurance,Revenue,2026-02,Sarah K
+GL-0064,2026-02-18,1100,Accounts Receivable,28000.00,,Invoice Liberty Feb,INV-2026-012,Liberty Insurance,Asset,2026-02,Sarah K
+GL-0065,2026-02-20,1000,Cash - Operating,31000.00,,Payment received - Frontier Tech,REC-003,Frontier Tech,Asset,2026-02,Sarah K
+GL-0066,2026-02-20,1100,Accounts Receivable,,31000.00,AR cleared - Frontier Tech,REC-003,Frontier Tech,Asset,2026-02,Sarah K
+GL-0067,2026-02-22,5130,Software Subscriptions,4200.00,,Salesforce CRM annual contract Q1,SW-002,Salesforce,Expense,2026-02,Amy C
+GL-0068,2026-02-22,2000,Accounts Payable,,4200.00,Salesforce invoice,SW-002,Salesforce,Liability,2026-02,Amy C
+GL-0069,2026-02-25,1000,Cash - Operating,42000.00,,Payment received - Westside Developers,REC-004,Westside Developers,Asset,2026-02,Mike R
+GL-0070,2026-02-25,1100,Accounts Receivable,,42000.00,AR cleared - Westside Developers,REC-004,Westside Developers,Asset,2026-02,Mike R
+GL-0071,2026-02-28,5200,Depreciation Expense,1458.00,,Monthly depreciation Feb,DEP-02-2026,,Expense,2026-02,System
+GL-0072,2026-02-28,1590,Accumulated Depreciation,,1458.00,Accumulated depreciation Feb,DEP-02-2026,,Asset,2026-02,System
+GL-0073,2026-02-28,5150,Professional Liability Insurance,1500.00,,Monthly E&O insurance Feb,ADJ-02-2026,,Expense,2026-02,System
+GL-0074,2026-02-28,1300,Prepaid Insurance,,1500.00,Prepaid insurance amortization Feb,ADJ-02-2026,,Asset,2026-02,System
+GL-0075,2026-03-02,4020,Accounting Services Revenue,,12500.00,March retainer - Apex Manufacturing,INV-2026-013,Apex Manufacturing,Revenue,2026-03,Sarah K
+GL-0076,2026-03-02,1100,Accounts Receivable,12500.00,,Invoice Apex Mar,INV-2026-013,Apex Manufacturing,Asset,2026-03,Sarah K
+GL-0077,2026-03-05,4000,Audit Services Revenue,,22000.00,March audit - Crest Healthcare,INV-2026-014,Crest Healthcare,Revenue,2026-03,Mike R
+GL-0078,2026-03-05,1100,Accounts Receivable,22000.00,,Invoice Crest Mar,INV-2026-014,Crest Healthcare,Asset,2026-03,Mike R
+GL-0079,2026-03-08,4030,Consulting Revenue,,45000.00,March advisory - Orbit Pharmaceuticals,INV-2026-015,Orbit Pharmaceuticals,Revenue,2026-03,Mike R
+GL-0080,2026-03-08,1100,Accounts Receivable,45000.00,,Invoice Orbit Mar,INV-2026-015,Orbit Pharmaceuticals,Asset,2026-03,Mike R
+GL-0081,2026-03-10,4020,Accounting Services Revenue,,8800.00,March accounting - Pacific Shipping,INV-2026-016,Pacific Shipping,Revenue,2026-03,Amy C
+GL-0082,2026-03-10,1100,Accounts Receivable,8800.00,,Invoice Pacific Mar,INV-2026-016,Pacific Shipping,Asset,2026-03,Amy C
+GL-0083,2026-03-12,4030,Consulting Revenue,,16500.00,March consulting - Quest Solutions,INV-2026-017,Quest Solutions,Revenue,2026-03,Sarah K
+GL-0084,2026-03-12,1100,Accounts Receivable,16500.00,,Invoice Quest Mar,INV-2026-017,Quest Solutions,Asset,2026-03,Sarah K
+GL-0085,2026-03-15,5000,Salaries - Professional Staff,68000.00,,Semi-monthly payroll Mar 1-15,PR-2026-03A,,Expense,2026-03,Payroll
+GL-0086,2026-03-15,5010,Salaries - Administrative,18000.00,,Admin payroll Mar 1-15,PR-2026-03A,,Expense,2026-03,Payroll
+GL-0087,2026-03-15,5020,Payroll Taxes - Employer,6579.00,,Employer FICA Mar 1-15,PR-2026-03A,,Expense,2026-03,Payroll
+GL-0088,2026-03-15,1010,Cash - Payroll,,92579.00,Net payroll Mar 1-15,PR-2026-03A,,Asset,2026-03,Payroll
+GL-0089,2026-03-15,5100,Rent Expense,5500.00,,March office rent,RENT-03-2026,WeWork,Expense,2026-03,Amy C
+GL-0090,2026-03-15,2000,Accounts Payable,,5500.00,WeWork Mar invoice,RENT-03-2026,WeWork,Liability,2026-03,Amy C
+GL-0091,2026-03-18,4000,Audit Services Revenue,,35000.00,Q1 audit - Ridge Valley Bank,INV-2026-018,Ridge Valley Bank,Revenue,2026-03,Mike R
+GL-0092,2026-03-18,1100,Accounts Receivable,35000.00,,Invoice Ridge Valley Mar,INV-2026-018,Ridge Valley Bank,Asset,2026-03,Mike R
+GL-0093,2026-03-20,1000,Cash - Operating,22000.00,,Payment received - Crest Healthcare Feb,REC-005,Crest Healthcare,Asset,2026-03,Mike R
+GL-0094,2026-03-20,1100,Accounts Receivable,,22000.00,AR cleared - Crest Healthcare Feb,REC-005,Crest Healthcare,Asset,2026-03,Mike R
+GL-0095,2026-03-22,4030,Consulting Revenue,,31000.00,March consulting - Frontier Tech,INV-2026-019,Frontier Tech,Revenue,2026-03,Sarah K
+GL-0096,2026-03-22,1100,Accounts Receivable,31000.00,,Invoice Frontier Mar,INV-2026-019,Frontier Tech,Asset,2026-03,Sarah K
+GL-0097,2026-03-25,1000,Cash - Operating,55000.00,,Payment received - Zenith Software,REC-006,Zenith Software,Asset,2026-03,Mike R
+GL-0098,2026-03-25,1100,Accounts Receivable,,55000.00,AR cleared - Zenith Software,REC-006,Zenith Software,Asset,2026-03,Mike R
+GL-0099,2026-03-28,5140,Professional Development,4200.00,,Q1 CPE credits and AICPA conference,PD-001,,Expense,2026-03,Sarah K
+GL-0100,2026-03-28,1000,Cash - Operating,,4200.00,CPE payment,PD-001,,Asset,2026-03,Sarah K
+GL-0101,2026-03-31,5200,Depreciation Expense,1458.00,,Monthly depreciation Mar,DEP-03-2026,,Expense,2026-03,System
+GL-0102,2026-03-31,1590,Accumulated Depreciation,,1458.00,Accumulated depreciation Mar,DEP-03-2026,,Asset,2026-03,System
+GL-0103,2026-03-31,5150,Professional Liability Insurance,1500.00,,Monthly E&O insurance Mar,ADJ-03-2026,,Expense,2026-03,System
+GL-0104,2026-03-31,1300,Prepaid Insurance,,1500.00,Prepaid insurance amortization Mar,ADJ-03-2026,,Asset,2026-03,System
+GL-0105,2026-03-31,5240,Bad Debt Expense,2800.00,,Write off uncollectible - Union Pacific Foods,ADJ-03B-2026,Union Pacific Foods,Expense,2026-03,Mike R
+GL-0106,2026-03-31,1110,Allowance for Doubtful Accounts,,2800.00,Allowance adjustment Q1,ADJ-03B-2026,,Asset,2026-03,Mike R
+GL-0107,2026-04-01,4020,Accounting Services Revenue,,12500.00,April retainer - Apex Manufacturing,INV-2026-020,Apex Manufacturing,Revenue,2026-04,Sarah K
+GL-0108,2026-04-01,1100,Accounts Receivable,12500.00,,Invoice Apex Apr,INV-2026-020,Apex Manufacturing,Asset,2026-04,Sarah K
+GL-0109,2026-04-05,4000,Audit Services Revenue,,22000.00,April audit - Crest Healthcare,INV-2026-021,Crest Healthcare,Revenue,2026-04,Mike R
+GL-0110,2026-04-05,1100,Accounts Receivable,22000.00,,Invoice Crest Apr,INV-2026-021,Crest Healthcare,Asset,2026-04,Mike R
+GL-0111,2026-04-08,4030,Consulting Revenue,,55000.00,April advisory - Zenith Software,INV-2026-022,Zenith Software,Revenue,2026-04,Mike R
+GL-0112,2026-04-08,1100,Accounts Receivable,55000.00,,Invoice Zenith Apr,INV-2026-022,Zenith Software,Asset,2026-04,Mike R
+GL-0113,2026-04-10,4000,Audit Services Revenue,,28500.00,April audit - Valley Medical Group,INV-2026-023,Valley Medical Group,Revenue,2026-04,Mike R
+GL-0114,2026-04-10,1100,Accounts Receivable,28500.00,,Invoice Valley Medical Apr,INV-2026-023,Valley Medical Group,Asset,2026-04,Mike R
+GL-0115,2026-04-12,4030,Consulting Revenue,,42000.00,April consulting - Westside Developers,INV-2026-024,Westside Developers,Revenue,2026-04,Sarah K
+GL-0116,2026-04-12,1100,Accounts Receivable,42000.00,,Invoice Westside Apr,INV-2026-024,Westside Developers,Asset,2026-04,Sarah K
+GL-0117,2026-04-15,5000,Salaries - Professional Staff,68000.00,,Semi-monthly payroll Apr 1-15,PR-2026-04A,,Expense,2026-04,Payroll
+GL-0118,2026-04-15,5010,Salaries - Administrative,18000.00,,Admin payroll Apr 1-15,PR-2026-04A,,Expense,2026-04,Payroll
+GL-0119,2026-04-15,5020,Payroll Taxes - Employer,6579.00,,Employer FICA Apr 1-15,PR-2026-04A,,Expense,2026-04,Payroll
+GL-0120,2026-04-15,1010,Cash - Payroll,,92579.00,Net payroll Apr 1-15,PR-2026-04A,,Asset,2026-04,Payroll
+GL-0121,2026-04-15,5100,Rent Expense,5500.00,,April office rent,RENT-04-2026,WeWork,Expense,2026-04,Amy C
+GL-0122,2026-04-15,2000,Accounts Payable,,5500.00,WeWork Apr invoice,RENT-04-2026,WeWork,Liability,2026-04,Amy C
+GL-0123,2026-04-18,1000,Cash - Operating,35000.00,,Payment received - Ridge Valley Bank,REC-007,Ridge Valley Bank,Asset,2026-04,Mike R
+GL-0124,2026-04-18,1100,Accounts Receivable,,35000.00,AR cleared - Ridge Valley Bank,REC-007,Ridge Valley Bank,Asset,2026-04,Mike R
+GL-0125,2026-04-20,1000,Cash - Operating,45000.00,,Payment received - Orbit Pharmaceuticals,REC-008,Orbit Pharmaceuticals,Asset,2026-04,Mike R
+GL-0126,2026-04-20,1100,Accounts Receivable,,45000.00,AR cleared - Orbit Pharmaceuticals,REC-008,Orbit Pharmaceuticals,Asset,2026-04,Mike R
+GL-0127,2026-04-22,5130,Software Subscriptions,3800.00,,AWS April services,SW-003,Amazon Web Services,Expense,2026-04,Amy C
+GL-0128,2026-04-22,2000,Accounts Payable,,3800.00,AWS April invoice,SW-003,Amazon Web Services,Liability,2026-04,Amy C
+GL-0129,2026-04-25,5160,Marketing and Advertising,6500.00,,Q2 digital marketing campaign,MKT-001,,Expense,2026-04,Sarah K
+GL-0130,2026-04-25,1000,Cash - Operating,,6500.00,Marketing payment,MKT-001,,Asset,2026-04,Sarah K
+GL-0131,2026-04-30,5200,Depreciation Expense,1458.00,,Monthly depreciation Apr,DEP-04-2026,,Expense,2026-04,System
+GL-0132,2026-04-30,1590,Accumulated Depreciation,,1458.00,Accumulated depreciation Apr,DEP-04-2026,,Asset,2026-04,System
+GL-0133,2026-04-30,5150,Professional Liability Insurance,1500.00,,Monthly E&O insurance Apr,ADJ-04-2026,,Expense,2026-04,System
+GL-0134,2026-04-30,1300,Prepaid Insurance,,1500.00,Prepaid insurance amortization Apr,ADJ-04-2026,,Asset,2026-04,System
+GL-0135,2026-04-30,2010,Accrued Salaries,,86000.00,Accrue Apr 16-30 salaries,ACCR-04-2026,,Liability,2026-04,System
+GL-0136,2026-04-30,5000,Salaries - Professional Staff,68000.00,,Accrued professional salaries Apr 16-30,ACCR-04-2026,,Expense,2026-04,System
+GL-0137,2026-04-30,5010,Salaries - Administrative,18000.00,,Accrued admin salaries Apr 16-30,ACCR-04-2026,,Expense,2026-04,System
+GL-0138,2026-04-30,4900,Interest Income,,420.00,Interest earned on operating account April,INT-04-2026,,Revenue,2026-04,System
+GL-0139,2026-04-30,1000,Cash - Operating,420.00,,Interest income deposited,INT-04-2026,,Asset,2026-04,System
