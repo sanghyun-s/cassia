@@ -268,9 +268,9 @@ textarea::placeholder{color:var(--dim)}
 
     <div class="input-area">
       <div class="input-wrap">
-        <button class="attach-btn" id="attachBtn" onclick="triggerFileUpload()" title="Upload CSV or Excel">
+        <button class="attach-btn" id="attachBtn" onclick="triggerFileUpload()" title="Upload CSV, Excel, or PDF">
           📎
-          <input type="file" id="fileInput" accept=".csv,.xlsx,.xls" onchange="handleFileSelected(event)">
+          <input type="file" id="fileInput" accept=".csv,.xlsx,.xls,.pdf" multiple onchange="handleFileSelected(event)">
         </button>
         <textarea id="questionInput"
           placeholder="Ask about your accounting data or tax regulations..."
@@ -279,7 +279,7 @@ textarea::placeholder{color:var(--dim)}
           oninput="autoResize(this)"></textarea>
         <button class="send-btn" id="sendBtn" onclick="sendMessage()">➤</button>
       </div>
-      <div class="input-hint">Enter to send · Shift+Enter for new line · 📎 upload CSV/Excel · Say "bar chart" or "pie chart" for visuals</div>
+      <div class="input-hint">Enter to send · Shift+Enter for new line · 📎 upload CSV/Excel/PDF · Say "bar chart" or "pie chart" for visuals</div>
     </div>
   </div>
 </div>
@@ -594,11 +594,11 @@ function triggerFileUpload() {
 
 async function handleFileSelected(event) {
   const fileInput = event.target;
-  const file      = fileInput.files[0];
-  fileInput.value = '';   // clear so the same file can be re-uploaded later
-  if (!file) return;
+  const files     = Array.from(fileInput.files || []);
+  fileInput.value = '';   // clear so the same files can be re-uploaded later
+  if (files.length === 0) return;
 
-  // If no active session yet, create one first — uploads always belong to a session
+  // If no active session yet, create one — uploads always belong to a session
   if (!activeSessionId) {
     try {
       const r = await fetch(`${API}/sessions`, { method: 'POST' });
@@ -613,39 +613,58 @@ async function handleFileSelected(event) {
 
   const attachBtn = document.getElementById('attachBtn');
   attachBtn.disabled = true;
-  showToast('info', 'Uploading...', file.name);
 
-  const formData = new FormData();
-  formData.append('file', file);
+  // Upload one file at a time so each succeeds/fails independently
+  for (const file of files) {
+    showToast('info', 'Uploading...', file.name);
 
-  try {
-    const r = await fetch(
-      `${API}/sessions/${activeSessionId}/uploads/ingest`,
-      { method: 'POST', body: formData }
-    );
+    const formData = new FormData();
+    formData.append('file', file);
 
-    if (!r.ok) {
-      const err = await r.json().catch(() => ({}));
-      const detail = err.detail || `HTTP ${r.status}`;
-      showToast('error', 'Upload failed', `${file.name}: ${detail}`);
-      return;
+    try {
+      const r = await fetch(
+        `${API}/sessions/${activeSessionId}/uploads/ingest`,
+        { method: 'POST', body: formData }
+      );
+
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        const detail = err.detail || `HTTP ${r.status}`;
+        showToast('error', 'Upload failed', `${file.name}: ${detail}`);
+        continue;
+      }
+
+      const data = await r.json();
+
+      // Build a friendly success message based on file type
+      let successBody;
+      if (data.file_type === 'pdf' || data.chunk_count !== undefined) {
+        // PDF response shape
+        successBody = `${data.page_count || 0} pages · ${data.chunk_count || 0} chunks indexed`;
+      } else if (data.sheets) {
+        // Excel multi-sheet response
+        const okSheets = data.sheets.filter(s => s.ok);
+        const totalRows = okSheets.reduce((sum, s) => sum + (s.row_count || 0), 0);
+        successBody = `${totalRows} rows · ${okSheets.length} sheet${okSheets.length !== 1 ? 's' : ''}`;
+      } else {
+        // CSV response (existing shape)
+        const tables = (data.tables_created || [data.table_name]).filter(Boolean).join(', ') || '(none)';
+        const rows   = data.total_rows ?? data.row_count ?? 0;
+        successBody = `${rows} rows · table ${tables}`;
+      }
+
+      showToast(
+        'success',
+        `Uploaded ${data.filename || file.name}`,
+        successBody
+      );
+    } catch (e) {
+      showToast('error', 'Upload failed', `${file.name}: ${e.message || 'Network error'}`);
     }
-
-    const data = await r.json();
-    const tables = (data.tables_created || []).join(', ') || '(none)';
-    const rows   = data.total_rows ?? 0;
-    showToast(
-      'success',
-      `Uploaded ${data.filename || file.name}`,
-      `${rows} rows · table${data.tables_created.length > 1 ? 's' : ''} ${tables}`
-    );
-
-    await loadUploads();
-  } catch (e) {
-    showToast('error', 'Upload failed', e.message || 'Network error');
-  } finally {
-    attachBtn.disabled = false;
   }
+
+  attachBtn.disabled = false;
+  await loadUploads();
 }
 
 // ── Toast ─────────────────────────────────────────────────

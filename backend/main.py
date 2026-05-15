@@ -1,12 +1,12 @@
 """
 =============================================================
-CoReckoner — FastAPI Backend  (Phase 3 close-out)
+CoReckoner — FastAPI Backend  (Phase 3 C3)
 =============================================================
 
-Phase 3 close-out:
-  - DELETE /sessions/{id} now also deletes the per-session SQLite DB file
-    at outputs/sessions/{id}.db.
-  - ChromaDB vector cleanup left as a stub for the PDF step.
+Phase 3 C3:
+  - run_rag_pipeline() now receives session_id so user PDFs are searchable
+  - DELETE /sessions/{id} cascade now also removes ChromaDB vectors
+    via document.delete_session_vectors(session_id)
 """
 
 import os
@@ -43,6 +43,7 @@ from db.session_store import (
     touch_session,
 )
 from uploads.session_db import delete_session_db
+from uploads.document   import delete_session_vectors
 
 load_dotenv()
 
@@ -55,7 +56,7 @@ CHROMA_DIR   = PROJECT_ROOT / "outputs" / "chroma_db"
 async def lifespan(app: FastAPI):
     print("\n" + "═" * 52)
     print("  CoReckoner — Accounting AI Chatbot")
-    print("  Phase 3 close-out: uploads + cascade + nudge")
+    print("  Phase 3 C3: PDF upload + dual-collection RAG")
     print("═" * 52)
     try:
         init_db()
@@ -80,8 +81,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="CoReckoner — Accounting AI Chatbot",
-    description="Hybrid RAG + Text-to-SQL with persistent sessions and uploads",
-    version="2.4.0",
+    description="Hybrid RAG + Text-to-SQL with persistent sessions, CSV/Excel/PDF uploads",
+    version="2.5.0",
     lifespan=lifespan,
 )
 
@@ -209,7 +210,9 @@ async def chat(request: ChatRequest):
             chart_hint    = sql_result.get("chart_hint", "none")
 
         if route in ("rag", "both"):
-            rag_result = run_rag_pipeline(question, llm, CHROMA_DIR)
+            rag_result = run_rag_pipeline(
+                question, llm, CHROMA_DIR, session_id=session_id
+            )
             if route == "rag":
                 response_type = rag_result.get("response_type", "answer")
 
@@ -308,7 +311,6 @@ async def get_full_session(session_id: str):
 
 @app.patch("/sessions/{session_id}")
 async def rename_session(session_id: str, body: SessionRenameRequest):
-    """Rename a session — called when user edits the title in the sidebar."""
     if not body.title or not body.title.strip():
         raise HTTPException(status_code=400, detail="Title cannot be empty")
     try:
@@ -326,10 +328,10 @@ async def rename_session(session_id: str, body: SessionRenameRequest):
 @app.delete("/sessions/{session_id}")
 async def remove_session(session_id: str):
     """
-    Delete a session and cascade cleanup:
+    Delete a session and cascade cleanup across three layers:
       1. coreckoner.db rows (sessions + messages + artifacts + uploads — via FK)
-      2. Per-session SQLite DB file at outputs/sessions/{id}.db
-      3. (TODO) Per-session ChromaDB vectors — wired in the PDF step
+      2. Per-session SQLite DB at outputs/sessions/{id}.db
+      3. Per-session ChromaDB vectors in 'user_uploads' collection (NEW in C3)
     """
     try:
         deleted = delete_session(session_id)
@@ -338,14 +340,19 @@ async def remove_session(session_id: str):
     if not deleted:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    # Cascade: remove the per-session SQLite DB file (if any)
+    # Cascade 1: per-session SQLite DB
     try:
         delete_session_db(session_id)
     except Exception as e:
-        # Non-fatal — the session row is already gone, just log.
         print(f"[main] cascade: delete_session_db failed for {session_id}: {e}")
 
-    # TODO (PDF step): also delete ChromaDB vectors where metadata.session_id == session_id
+    # Cascade 2: per-session ChromaDB vectors
+    try:
+        n_deleted = delete_session_vectors(session_id)
+        if n_deleted:
+            print(f"[main] cascade: deleted {n_deleted} vectors for {session_id}")
+    except Exception as e:
+        print(f"[main] cascade: delete_session_vectors failed for {session_id}: {e}")
 
     return {"status": "deleted", "session_id": session_id}
 

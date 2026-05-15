@@ -1,6 +1,6 @@
 """
 =============================================================
-UPLOAD ROUTER — /uploads endpoints
+UPLOAD ROUTER — /uploads endpoints  (Phase 3 C3)
 =============================================================
 
 Endpoints:
@@ -8,6 +8,10 @@ Endpoints:
   POST   /sessions/{session_id}/uploads/ingest      persist a file
   GET    /sessions/{session_id}/uploads             list uploads
   DELETE /uploads/{upload_id}                       remove an upload
+
+Phase 3 C3 changes:
+  - PDF preview + ingest now live (no more 501)
+  - DELETE branch handles 'rag' target by removing ChromaDB vectors
 """
 
 import json
@@ -22,8 +26,9 @@ from db.session_store import (
     get_upload,
     delete_upload_record,
 )
-from uploads.tabular import preview_csv, preview_xlsx, ingest_csv, ingest_xlsx
+from uploads.tabular    import preview_csv, preview_xlsx, ingest_csv, ingest_xlsx
 from uploads.session_db import drop_tables
+from uploads.document   import preview_pdf, ingest_pdf, delete_upload_vectors
 
 
 router = APIRouter(tags=["uploads"])
@@ -43,13 +48,6 @@ def _detect_file_type(filename: str) -> str:
     if ext in (".txt", ".md"):
         return "txt"
     return "unknown"
-
-
-def _read_and_validate(file: UploadFile) -> bytes:
-    """Shared upload validation. Raises HTTPException on failure."""
-    # FastAPI's UploadFile is async; the caller awaits .read() — but we keep
-    # this synchronous and let the endpoint do the await.
-    raise RuntimeError("Use _read_validated() (async) instead.")
 
 
 async def _read_validated(file: UploadFile) -> bytes:
@@ -101,16 +99,24 @@ async def preview_upload(session_id: str, file: UploadFile = File(...)):
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
 
-    if file_type in ("pdf", "txt"):
+    if file_type == "pdf":
+        try:
+            return preview_pdf(file_bytes, file.filename)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"PDF preview failed: {e}")
+
+    if file_type == "txt":
         raise HTTPException(
             status_code=status.HTTP_501_NOT_IMPLEMENTED,
-            detail=f"{file_type.upper()} preview not yet implemented (coming in next step).",
+            detail="TXT preview not yet implemented.",
         )
 
     raise HTTPException(
         status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
         detail=f"Unsupported file type. Got '{Path(file.filename).suffix}'. "
-               f"Supported: .csv, .xlsx, .xls (and soon .pdf, .txt).",
+               f"Supported: .csv, .xlsx, .xls, .pdf.",
     )
 
 
@@ -124,7 +130,7 @@ async def ingest_upload(
 ):
     """
     Persist an uploaded file into the session's SQLite DB (tabular) or
-    ChromaDB (documents — coming in later step).
+    ChromaDB 'user_uploads' collection (PDF).
 
     `metadata` is an optional JSON string. Shape:
       {
@@ -171,7 +177,13 @@ async def ingest_upload(
             table_names = result["tables_created"],
             row_count   = result["total_rows"],
         )
-        return {"upload_id": upload_id, "session_id": session_id, "filename": file.filename, **result}
+        return {
+            "upload_id":  upload_id,
+            "session_id": session_id,
+            "filename":   file.filename,
+            "file_type":  "csv",
+            **result,
+        }
 
     # ── Excel ──
     if file_type == "xlsx":
@@ -196,13 +208,44 @@ async def ingest_upload(
             table_names = result["tables_created"],
             row_count   = result["total_rows"],
         )
-        return {"upload_id": upload_id, "session_id": session_id, "filename": file.filename, **result}
+        return {
+            "upload_id":  upload_id,
+            "session_id": session_id,
+            "filename":   file.filename,
+            "file_type":  "xlsx",
+            **result,
+        }
 
-    # ── PDF / text — coming in later steps ──
-    if file_type in ("pdf", "txt"):
+    # ── PDF ──  (NEW in Phase 3 C3)
+    if file_type == "pdf":
+        try:
+            result = ingest_pdf(file_bytes, file.filename, session_id)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"PDF ingest failed: {e}")
+
+        upload_id = create_upload(
+            session_id  = session_id,
+            filename    = file.filename,
+            file_type   = "pdf",
+            target      = "rag",
+            table_names = [],
+            chunk_count = result.get("chunk_count", 0),
+        )
+        return {
+            "upload_id":   upload_id,
+            "session_id":  session_id,
+            "filename":    file.filename,
+            "file_type":   "pdf",
+            "page_count":  result.get("page_count", 0),
+            "chunk_count": result.get("chunk_count", 0),
+        }
+
+    if file_type == "txt":
         raise HTTPException(
             status_code=status.HTTP_501_NOT_IMPLEMENTED,
-            detail=f"{file_type.upper()} ingest not yet implemented (coming in next step).",
+            detail="TXT ingest not yet implemented.",
         )
 
     raise HTTPException(
@@ -227,25 +270,33 @@ async def list_session_uploads(session_id: str):
 async def delete_upload(upload_id: str):
     """
     Remove an upload:
-      - For 'sql' uploads, drop the tables from the session DB
-      - For 'rag' uploads (later), remove vectors from ChromaDB
-      - Delete the uploads row
+      - 'sql' target → drop the tables from the session DB
+      - 'rag' target → remove vectors from ChromaDB user_uploads collection
+      - delete the uploads row
     """
     upload = get_upload(upload_id)
     if not upload:
         raise HTTPException(status_code=404, detail=f"Upload {upload_id} not found")
 
-    if upload["target"] == "sql":
+    target     = upload.get("target", "sql")
+    session_id = upload.get("session_id", "")
+    filename   = upload.get("filename", "")
+
+    if target == "sql":
         tables = upload.get("table_names") or []
         if tables:
             try:
-                drop_tables(upload["session_id"], tables)
+                drop_tables(session_id, tables)
             except Exception as e:
-                # Continue with row removal — failing to drop tables shouldn't
-                # leave a dangling uploads row the user can't get rid of.
                 print(f"[upload_router] drop_tables failed for {upload_id}: {e}")
 
-    # 'rag' branch will be implemented when PDF/text ingest lands.
+    elif target == "rag":
+        try:
+            n = delete_upload_vectors(session_id, filename)
+            if n:
+                print(f"[upload_router] removed {n} vectors for {filename}")
+        except Exception as e:
+            print(f"[upload_router] delete_upload_vectors failed for {upload_id}: {e}")
 
     deleted = delete_upload_record(upload_id)
     if not deleted:
