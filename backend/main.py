@@ -1,12 +1,16 @@
 """
 =============================================================
-CoReckoner — FastAPI Backend  (Phase 3 C3)
+CoReckoner — FastAPI Backend  (Phase 3 C3 + Phase 4 warm-up)
 =============================================================
 
 Phase 3 C3:
-  - run_rag_pipeline() now receives session_id so user PDFs are searchable
-  - DELETE /sessions/{id} cascade now also removes ChromaDB vectors
-    via document.delete_session_vectors(session_id)
+  - run_rag_pipeline() receives session_id so user PDFs are searchable
+  - DELETE /sessions/{id} cascade also removes ChromaDB vectors
+
+Phase 4 warm-up:
+  - classify_question() now receives session_id so the router knows
+    about uploaded PDFs and routes accordingly (fixes "What were Apple's
+    total net sales?" being misrouted to SQL).
 """
 
 import os
@@ -56,7 +60,7 @@ CHROMA_DIR   = PROJECT_ROOT / "outputs" / "chroma_db"
 async def lifespan(app: FastAPI):
     print("\n" + "═" * 52)
     print("  CoReckoner — Accounting AI Chatbot")
-    print("  Phase 3 C3: PDF upload + dual-collection RAG")
+    print("  Phase 3 C3 + Phase 4 warm-up (router PDF-aware)")
     print("═" * 52)
     try:
         init_db()
@@ -82,7 +86,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="CoReckoner — Accounting AI Chatbot",
     description="Hybrid RAG + Text-to-SQL with persistent sessions, CSV/Excel/PDF uploads",
-    version="2.5.0",
+    version="2.5.1",
     lifespan=lifespan,
 )
 
@@ -193,7 +197,8 @@ async def chat(request: ChatRequest):
         except Exception:
             pass
 
-    route_result = classify_question(question, llm)
+    # Phase 4 warm-up: pass session_id so the router knows about uploaded PDFs
+    route_result = classify_question(question, llm, session_id=session_id)
     route        = route_result["route"]
 
     sql_result    = {}

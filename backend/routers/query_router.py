@@ -23,6 +23,14 @@ through here first. The router decides:
 Two strategies available:
   1. LLM-based   (more accurate, costs ~$0.001 per route)
   2. Keyword     (free, instant, less accurate — fallback)
+
+Phase 4 warm-up:
+  - classify_question() now accepts session_id. If the session has
+    uploaded PDFs, the LLM router is told about them and biased toward
+    RAG/BOTH for questions that could target those documents — even when
+    the question mentions numbers/totals. Fixes the case where
+    "What were Apple's total net sales?" routed to SQL despite an
+    uploaded 10-K.
 """
 
 import os
@@ -72,11 +80,12 @@ The chatbot has two data sources:
 
 2. VECTOR DATABASE (RAG) — unstructured documents:
    - IRS Pub 15, Pub 15-T (withholding methods), Pub 15-B (fringe benefits)
+   - PLUS any PDF documents the user has uploaded to this session
 
-{history_block}Classify the question below into exactly one of:
+{history_block}{uploads_block}Classify the question below into exactly one of:
 - "sql"  → needs exact numbers from the database
-- "rag"  → needs explanation from policy documents
-- "both" → needs data AND policy context
+- "rag"  → needs explanation from policy documents OR uploaded PDFs
+- "both" → needs data AND policy/document context
 
 If the question is a follow-up that refers to prior turns (e.g. "those",
 "the first one", "그 중에서", "show me top 3"), classify based on what the
@@ -85,8 +94,21 @@ prior turn was about. A follow-up to a SQL result is still "sql".
 Question: {question}
 
 Reply with ONLY one word: sql, rag, or both""",
-    input_variables=["question", "history_block"],
+    input_variables=["question", "history_block", "uploads_block"],
 )
+
+
+def _get_session_pdf_filenames(session_id: str) -> list:
+    """Return list of PDF filenames uploaded to this session (target='rag')."""
+    if not session_id:
+        return []
+    try:
+        from db.session_store import list_uploads
+        uploads = list_uploads(session_id)
+        return [u["filename"] for u in uploads if u.get("target") == "rag"]
+    except Exception as e:
+        print(f"[query_router] could not fetch session uploads: {e}")
+        return []
 
 
 def route_with_keywords(question: str) -> RouteDecision:
@@ -110,19 +132,38 @@ def route_with_keywords(question: str) -> RouteDecision:
         return RouteDecision.SQL
 
 
-def route_with_llm(question: str, llm: ChatOpenAI, history: str = "") -> RouteDecision:
+def route_with_llm(question: str, llm: ChatOpenAI, history: str = "",
+                   pdf_filenames: list = None) -> RouteDecision:
     """
     LLM-based routing — more accurate, understands context.
     Primary routing strategy.
 
     If `history` is non-empty, it's injected into the prompt so the
     classifier can resolve follow-up references like "those" or "the top 3".
+
+    If `pdf_filenames` is non-empty, the classifier is told this session
+    has uploaded PDFs and should prefer RAG/BOTH for questions that could
+    be about those documents, even if they mention numbers.
     """
     history_block = ""
     if history:
         history_block = f"PRIOR CONVERSATION (most recent last):\n{history}\n\n"
 
-    prompt = ROUTER_PROMPT.format(question=question, history_block=history_block)
+    uploads_block = ""
+    if pdf_filenames:
+        files_str = ", ".join(pdf_filenames)
+        uploads_block = (
+            f"IMPORTANT — this session has uploaded PDF document(s): {files_str}.\n"
+            f"Questions that could be answered by those documents should be "
+            f"classified as 'rag' or 'both', EVEN IF they mention numbers, totals, "
+            f"or amounts. A question about figures inside an uploaded PDF is still 'rag'.\n\n"
+        )
+
+    prompt = ROUTER_PROMPT.format(
+        question=question,
+        history_block=history_block,
+        uploads_block=uploads_block,
+    )
     response = llm.invoke(prompt)
     decision = response.content.strip().lower()
 
@@ -138,19 +179,25 @@ def route_with_llm(question: str, llm: ChatOpenAI, history: str = "") -> RouteDe
         return route_with_keywords(question)
 
 
-def classify_question(question: str, llm: ChatOpenAI = None, history: str = "") -> dict:
+def classify_question(question: str, llm: ChatOpenAI = None, history: str = "",
+                      session_id: str = None) -> dict:
     """
     Main routing function called by FastAPI.
     Returns route decision + explanation for transparency.
 
     Args:
-        question: The user's current question
-        llm: ChatOpenAI instance (if None, falls back to keyword routing)
-        history: Formatted prior conversation context (last N turns).
-                 Empty string for first turn or when memory is disabled.
+        question:   The user's current question
+        llm:        ChatOpenAI instance (if None, falls back to keyword routing)
+        history:    Formatted prior conversation context (last N turns).
+                    Empty string for first turn or when memory is disabled.
+        session_id: Current session — used to detect uploaded PDFs and bias
+                    routing toward RAG when the question may target them.
     """
+    pdf_filenames = _get_session_pdf_filenames(session_id)
+
     if llm:
-        decision = route_with_llm(question, llm, history=history)
+        decision = route_with_llm(question, llm, history=history,
+                                  pdf_filenames=pdf_filenames)
         method = "llm"
     else:
         decision = route_with_keywords(question)
