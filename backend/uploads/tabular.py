@@ -11,6 +11,12 @@ Public API:
   preview_xlsx(file_bytes, filename) -> dict
   ingest_csv(session_id, file_bytes, filename, override_table_name=None) -> dict
   ingest_xlsx(session_id, file_bytes, filename, table_name_overrides=None) -> dict
+
+Phase 4b-1:
+  - ingest_csv / ingest_xlsx now also return a "summary" key: a compact
+    {kind:"tabular", tables:[{table_name, columns, row_count, sample_rows}]}
+    captured from the dataframe in hand. The upload router stores it as
+    summary_json so core-saves can be rich without re-reading the file.
 """
 
 import io
@@ -27,6 +33,10 @@ from uploads.schema_utils import (
 from uploads.session_db import write_dataframe
 
 PREVIEW_MAX_COLUMNS = 50
+
+# How many sample rows to capture in the ingest summary (for core-saves recall).
+SUMMARY_SAMPLE_ROWS = 5
+SUMMARY_MAX_COLUMNS = 30
 
 
 # ── PREVIEW ────────────────────────────────────────────────
@@ -48,6 +58,37 @@ def _describe_dataframe(df: pd.DataFrame, suggested_table: str, sheet_name: str 
         "row_count":         int(len(df)),
         "columns":           columns,
         "truncated_columns": len(df.columns) > PREVIEW_MAX_COLUMNS,
+    }
+
+
+def _table_summary(df: pd.DataFrame, table_name: str) -> dict:
+    """
+    Build a compact, JSON-safe summary of one table for core-saves.
+    Columns (capped) + first N rows as plain dicts + row count.
+    """
+    cols = [str(c) for c in df.columns[:SUMMARY_MAX_COLUMNS]]
+
+    head = df.head(SUMMARY_SAMPLE_ROWS)
+    sample_rows = []
+    for _, row in head.iterrows():
+        r = {}
+        for c in cols:
+            val = row[c]
+            # Coerce to JSON-safe primitives; NaN/NaT → None
+            if pd.isna(val):
+                r[c] = None
+            elif isinstance(val, (int, float, bool, str)):
+                r[c] = val
+            else:
+                r[c] = str(val)
+        sample_rows.append(r)
+
+    return {
+        "table_name":  table_name,
+        "columns":     cols,
+        "row_count":   int(len(df)),
+        "sample_rows": sample_rows,
+        "truncated_columns": len(df.columns) > SUMMARY_MAX_COLUMNS,
     }
 
 
@@ -137,7 +178,8 @@ def ingest_csv(
 ) -> dict:
     """
     Write the CSV into this session's SQLite DB as one table.
-    Returns a per-sheet summary (single sheet for CSV).
+    Returns a per-sheet summary (single sheet for CSV) plus a compact
+    'summary' for core-saves.
     """
     df = _read_csv_bytes(file_bytes)
     if df.empty and len(df.columns) == 0:
@@ -162,6 +204,10 @@ def ingest_csv(
             "status":      "ok",
         }],
         "total_rows":     int(len(df)),
+        "summary": {
+            "kind":   "tabular",
+            "tables": [_table_summary(df, final_table)],
+        },
     }
 
 
@@ -191,6 +237,7 @@ def ingest_xlsx(
 
     sheet_results: list[dict]  = []
     tables_created: list[str]  = []
+    summary_tables: list[dict] = []
     total_rows                 = 0
 
     for sheet_name in xl.sheet_names:
@@ -224,6 +271,7 @@ def ingest_xlsx(
                 "status":      "ok",
             })
             tables_created.append(final_table)
+            summary_tables.append(_table_summary(df, final_table))
             total_rows += int(len(df))
         except Exception as e:
             sheet_results.append({
@@ -240,4 +288,8 @@ def ingest_xlsx(
         "tables_created": tables_created,
         "sheets":         sheet_results,
         "total_rows":     total_rows,
+        "summary": {
+            "kind":   "tabular",
+            "tables": summary_tables,
+        },
     }

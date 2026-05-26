@@ -15,6 +15,11 @@ Tables:
   core_topics — one row per user-defined topic (Phase 4a)
   core_saves  — one row per saved message/upload committed to core (Phase 4a)
 
+Phase 4b-1:
+  - uploads gains a summary_json column (columns + sample rows for tabular,
+    preview text for PDFs) captured at ingest time so core-saves can be rich.
+  - An idempotent ALTER guard adds the column to pre-existing databases.
+
 Usage:
   from db.session_store import (
       init_db, create_session, get_all_sessions,
@@ -57,11 +62,28 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _column_exists(conn: sqlite3.Connection, table: str, column: str) -> bool:
+    """Return True if `column` exists on `table`."""
+    rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+    return any(r["name"] == column for r in rows)
+
+
+def _ensure_column(conn: sqlite3.Connection, table: str, column: str, decl: str) -> None:
+    """
+    Idempotently add a column to an existing table.
+    CREATE TABLE IF NOT EXISTS does NOT add columns to a table that already
+    exists, so for new columns on pre-existing databases we ALTER here.
+    """
+    if not _column_exists(conn, table, column):
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
+
+
 # ── Init ───────────────────────────────────────────────────
 
 def init_db() -> None:
     """
-    Create tables if they do not exist.
+    Create tables if they do not exist, then run idempotent column
+    migrations for any new columns added in later phases.
     Called once on FastAPI startup — safe to call repeatedly.
     """
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -101,6 +123,7 @@ def init_db() -> None:
                 table_names  TEXT,
                 chunk_count  INTEGER,
                 row_count    INTEGER,
+                summary_json TEXT,
                 uploaded_at  TEXT NOT NULL
             );
 
@@ -157,6 +180,12 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_core_topics_user
                 ON core_topics(user_id);
         """)
+
+        # ── Idempotent column migrations (for pre-existing databases) ──
+        # The uploads table may already exist from before 4b-1 without
+        # summary_json. CREATE TABLE IF NOT EXISTS won't add it — ALTER does.
+        _ensure_column(conn, "uploads", "summary_json", "TEXT")
+
         conn.commit()
     finally:
         conn.close()
@@ -365,40 +394,49 @@ def get_session_with_messages(session_id: str) -> dict | None:
 # ── Upload CRUD ────────────────────────────────────────────
 
 def create_upload(
-    session_id:  str,
-    filename:    str,
-    file_type:   str,
-    target:      str,
-    table_names: list[str] | None = None,
-    chunk_count: int | None       = None,
-    row_count:   int | None       = None,
+    session_id:   str,
+    filename:     str,
+    file_type:    str,
+    target:       str,
+    table_names:  list[str] | None = None,
+    chunk_count:  int | None       = None,
+    row_count:    int | None       = None,
+    summary_json: dict | list | str | None = None,
 ) -> str:
     """
     Record a user-uploaded file.
 
     Args:
-      session_id  — owning session
-      filename    — original uploaded name (e.g. 'sales_2026.csv')
-      file_type   — 'csv' | 'xlsx' | 'pdf' | 'txt'
-      target      — 'sql' (tabular → session DB) or 'rag' (document → ChromaDB)
-      table_names — list of table names created in the session DB (sql target)
-      chunk_count — number of vector chunks created in ChromaDB (rag target)
-      row_count   — total rows ingested across all tables (sql target)
+      session_id   — owning session
+      filename     — original uploaded name (e.g. 'sales_2026.csv')
+      file_type    — 'csv' | 'xlsx' | 'pdf' | 'txt'
+      target       — 'sql' (tabular → session DB) or 'rag' (document → ChromaDB)
+      table_names  — list of table names created in the session DB (sql target)
+      chunk_count  — number of vector chunks created in ChromaDB (rag target)
+      row_count    — total rows ingested across all tables (sql target)
+      summary_json — compact summary captured at ingest (columns + sample rows
+                     for tabular, preview text for PDFs). Used by core-saves.
 
     Returns the new upload_id.
     """
     upload_id = f"upl_{uuid.uuid4().hex[:12]}"
-    conn      = _get_conn()
+
+    summary_str = None
+    if summary_json is not None:
+        summary_str = (summary_json if isinstance(summary_json, str)
+                       else json.dumps(summary_json, ensure_ascii=False))
+
+    conn = _get_conn()
     try:
         conn.execute(
             """INSERT INTO uploads
                (upload_id, session_id, filename, file_type, target,
-                table_names, chunk_count, row_count, uploaded_at)
-               VALUES (?,?,?,?,?,?,?,?,?)""",
+                table_names, chunk_count, row_count, summary_json, uploaded_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?)""",
             (
                 upload_id, session_id, filename, file_type, target,
                 json.dumps(table_names) if table_names else None,
-                chunk_count, row_count, _now()
+                chunk_count, row_count, summary_str, _now()
             )
         )
         conn.commit()
@@ -407,22 +445,31 @@ def create_upload(
         conn.close()
 
 
+def _row_to_upload(row: sqlite3.Row) -> dict:
+    """Convert an uploads row to a dict, parsing JSON fields."""
+    d = dict(row)
+    d["table_names"] = json.loads(d["table_names"]) if d.get("table_names") else []
+    if d.get("summary_json"):
+        try:
+            d["summary"] = json.loads(d["summary_json"])
+        except Exception:
+            d["summary"] = None
+    else:
+        d["summary"] = None
+    return d
+
+
 def list_uploads(session_id: str) -> list[dict]:
     """Return all uploads for a session, newest first."""
     conn = _get_conn()
     try:
         rows = conn.execute(
             """SELECT upload_id, session_id, filename, file_type, target,
-                      table_names, chunk_count, row_count, uploaded_at
+                      table_names, chunk_count, row_count, summary_json, uploaded_at
                FROM uploads WHERE session_id=? ORDER BY uploaded_at DESC""",
             (session_id,)
         ).fetchall()
-        result = []
-        for r in rows:
-            row = dict(r)
-            row["table_names"] = json.loads(row["table_names"]) if row["table_names"] else []
-            result.append(row)
-        return result
+        return [_row_to_upload(r) for r in rows]
     finally:
         conn.close()
 
@@ -433,15 +480,13 @@ def get_upload(upload_id: str) -> dict | None:
     try:
         row = conn.execute(
             """SELECT upload_id, session_id, filename, file_type, target,
-                      table_names, chunk_count, row_count, uploaded_at
+                      table_names, chunk_count, row_count, summary_json, uploaded_at
                FROM uploads WHERE upload_id=?""",
             (upload_id,)
         ).fetchone()
         if not row:
             return None
-        result = dict(row)
-        result["table_names"] = json.loads(result["table_names"]) if result["table_names"] else []
-        return result
+        return _row_to_upload(row)
     finally:
         conn.close()
 

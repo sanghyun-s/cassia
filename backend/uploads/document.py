@@ -10,6 +10,11 @@ Phase 3 C3:
   - Every chunk is tagged with metadata {session_id, source_file, page}.
   - Session delete cascades to bulk-delete vectors WHERE session_id == ...
   - One PDF delete: WHERE session_id == ... AND source_file == ...
+
+Phase 4b-1:
+  - ingest_pdf now also returns a "summary" key: a compact
+    {kind:"document", page_count, chunk_count, preview_text} captured from
+    the first chunk, so core-saves can be rich without re-reading the PDF.
 """
 
 import os
@@ -34,6 +39,9 @@ EMBEDDING_MODEL = "text-embedding-3-small"
 
 # IRS docs live in 'irs_pub15' — DO NOT WRITE THERE. User PDFs go here.
 USER_COLLECTION_NAME = "user_uploads"
+
+# How many characters of the first chunk to capture for the core-save summary.
+SUMMARY_PREVIEW_CHARS = 200
 
 # Same boilerplate stripper as phase1_ingest.py so chunks read cleanly.
 _BOILERPLATE_PATTERNS = [
@@ -110,7 +118,7 @@ def ingest_pdf(file_bytes: bytes, filename: str, session_id: str) -> dict:
     Parse PDF → chunk → embed → write to user_uploads collection.
     Every chunk tagged with metadata {session_id, source_file, page}.
 
-    Returns: {filename, chunk_count, page_count}
+    Returns: {filename, chunk_count, page_count, summary}
     Raises on any failure — caller wraps with HTTPException.
     """
     if not session_id:
@@ -157,10 +165,20 @@ def ingest_pdf(file_bytes: bytes, filename: str, session_id: str) -> dict:
         vs = _get_user_vectorstore()
         vs.add_documents(chunks)
 
+        # Capture a short preview from the first chunk for core-saves recall.
+        preview_text = chunks[0].page_content[:SUMMARY_PREVIEW_CHARS].strip()
+
         return {
             "filename":    filename,
             "page_count":  len(pages),
             "chunk_count": len(chunks),
+            "summary": {
+                "kind":         "document",
+                "filename":     filename,
+                "page_count":   len(pages),
+                "chunk_count":  len(chunks),
+                "preview_text": preview_text,
+            },
         }
     finally:
         try:

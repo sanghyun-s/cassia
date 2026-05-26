@@ -1,6 +1,6 @@
 """
 =============================================================
-UPLOAD ROUTER — /uploads endpoints  (Phase 3 C3)
+UPLOAD ROUTER — /uploads endpoints  (Phase 3 C3 + 4b-1)
 =============================================================
 
 Endpoints:
@@ -9,9 +9,12 @@ Endpoints:
   GET    /sessions/{session_id}/uploads             list uploads
   DELETE /uploads/{upload_id}                       remove an upload
 
-Phase 3 C3 changes:
-  - PDF preview + ingest now live (no more 501)
-  - DELETE branch handles 'rag' target by removing ChromaDB vectors
+Phase 3 C3:
+  - PDF preview + ingest live; DELETE handles 'rag' target (ChromaDB)
+
+Phase 4b-1:
+  - Each create_upload() now stores the summary captured at ingest
+    (summary_json) so core-saves can be rich without re-reading files.
 """
 
 import json
@@ -170,12 +173,13 @@ async def ingest_upload(
             raise HTTPException(status_code=500, detail=f"Ingest failed: {e}")
 
         upload_id = create_upload(
-            session_id  = session_id,
-            filename    = file.filename,
-            file_type   = "csv",
-            target      = "sql",
-            table_names = result["tables_created"],
-            row_count   = result["total_rows"],
+            session_id   = session_id,
+            filename     = file.filename,
+            file_type    = "csv",
+            target       = "sql",
+            table_names  = result["tables_created"],
+            row_count    = result["total_rows"],
+            summary_json = result.get("summary"),
         )
         return {
             "upload_id":  upload_id,
@@ -201,12 +205,13 @@ async def ingest_upload(
             raise HTTPException(status_code=500, detail=f"Ingest failed: {e}")
 
         upload_id = create_upload(
-            session_id  = session_id,
-            filename    = file.filename,
-            file_type   = "xlsx",
-            target      = "sql",
-            table_names = result["tables_created"],
-            row_count   = result["total_rows"],
+            session_id   = session_id,
+            filename     = file.filename,
+            file_type    = "xlsx",
+            target       = "sql",
+            table_names  = result["tables_created"],
+            row_count    = result["total_rows"],
+            summary_json = result.get("summary"),
         )
         return {
             "upload_id":  upload_id,
@@ -216,7 +221,7 @@ async def ingest_upload(
             **result,
         }
 
-    # ── PDF ──  (NEW in Phase 3 C3)
+    # ── PDF ──  (Phase 3 C3)
     if file_type == "pdf":
         try:
             result = ingest_pdf(file_bytes, file.filename, session_id)
@@ -226,12 +231,13 @@ async def ingest_upload(
             raise HTTPException(status_code=500, detail=f"PDF ingest failed: {e}")
 
         upload_id = create_upload(
-            session_id  = session_id,
-            filename    = file.filename,
-            file_type   = "pdf",
-            target      = "rag",
-            table_names = [],
-            chunk_count = result.get("chunk_count", 0),
+            session_id   = session_id,
+            filename     = file.filename,
+            file_type    = "pdf",
+            target       = "rag",
+            table_names  = [],
+            chunk_count  = result.get("chunk_count", 0),
+            summary_json = result.get("summary"),
         )
         return {
             "upload_id":   upload_id,
