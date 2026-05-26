@@ -1,6 +1,6 @@
 """
 =============================================================
-CoReckoner — FastAPI Backend  (Phase 4b-2)
+CoReckoner — FastAPI Backend  (Phase 4c)
 =============================================================
 
 Phase 3 C3:
@@ -14,12 +14,15 @@ Phase 4a:
   - ensure_default_user() on startup; /stats reports core counts
 
 Phase 4b-2 (save button):
-  - ChatResponse now carries message_id so a freshly-sent assistant
-    message can be saved to core immediately.
-  - POST /core/save     — save a message or upload to the user's core
-  - GET  /core/saves    — look up saves (for filled-button state)
-  Saves go to the default unsorted bucket (no topic at save time);
-  topic organisation arrives in 4c.
+  - ChatResponse carries message_id
+  - POST /core/save, GET /core/saves (filled-button state)
+
+Phase 4c (topics + My Core Data):
+  - GET/POST/PATCH/DELETE /core/topics — topic CRUD
+  - GET  /core/saves/list  — browse saves (optionally by topic)
+  - PATCH /core/saves/{id} — move a save to a topic / set note
+  - DELETE /core/saves/{id} — archive (soft-delete) a save
+  All wrap the CRUD built in 4a, scoped to the single default user.
 """
 
 import os
@@ -66,6 +69,14 @@ from db.session_store import (
     create_save,
     get_save,
     find_save_by_source,
+    # Phase 4c
+    create_topic,
+    list_topics,
+    rename_topic,
+    delete_topic,
+    list_saves,
+    update_save_topic,
+    archive_save,
 )
 from uploads.session_db import delete_session_db
 from uploads.document   import delete_session_vectors
@@ -86,7 +97,7 @@ async def lifespan(app: FastAPI):
     global CURRENT_USER_ID
     print("\n" + "═" * 52)
     print("  CoReckoner — Accounting AI Chatbot")
-    print("  Phase 4b-2: save button (core saves)")
+    print("  Phase 4c: topics + My Core Data")
     print("═" * 52)
     try:
         init_db()
@@ -118,7 +129,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="CoReckoner — Accounting AI Chatbot",
     description="Hybrid RAG + Text-to-SQL with persistent sessions, CSV/Excel/PDF uploads",
-    version="2.7.0",
+    version="2.8.0",
     lifespan=lifespan,
 )
 
@@ -167,6 +178,24 @@ class CoreSaveRequest(BaseModel):
     kind:      str                      # 'message' | 'upload'
     source_id: str                      # message_id or upload_id
     note:      Optional[str] = None
+
+
+class TopicCreateRequest(BaseModel):
+    name: str
+
+
+class TopicRenameRequest(BaseModel):
+    name: str
+
+
+class SaveUpdateRequest(BaseModel):
+    # topic_id semantics:
+    #   omitted (None + not provided) → leave topic unchanged
+    #   ""  or "__none__"             → move to Unsorted (NULL)
+    #   "top_..."                     → move to that topic
+    topic_id: Optional[str] = None
+    note:     Optional[str] = None
+    clear_topic: bool = False           # explicit "move to Unsorted"
 
 
 def get_llm() -> ChatOpenAI:
@@ -414,10 +443,6 @@ def _build_message_snapshot(message_id: str) -> dict:
     full text + its artifacts (sql, result, citations, chart, route).
     Returns {title, content, metadata, source_session_id} or raises 404.
     """
-    # Find the message by scanning sessions is expensive; instead read
-    # artifacts directly and the message row via a targeted helper.
-    # get_message_artifacts works on message_id; we still need the message
-    # row for content + session_id, so fetch via a small query helper.
     from db.session_store import _get_conn  # local import; internal helper
     conn = _get_conn()
     try:
@@ -434,7 +459,6 @@ def _build_message_snapshot(message_id: str) -> dict:
     msg = dict(row)
     artifacts = get_message_artifacts(message_id)
 
-    # Fold artifacts into a compact metadata dict
     meta: dict = {"pipeline": msg.get("pipeline_used")}
     for a in artifacts:
         meta[a["artifact_type"]] = a.get("content")
@@ -462,7 +486,6 @@ def _build_upload_snapshot(upload_id: str) -> dict:
     filename = up.get("filename", "(file)")
     summary  = up.get("summary")  # dict captured at ingest, or None
 
-    # Build a human-readable content blurb from the summary
     lines = [f"Uploaded file: {filename}"]
     if summary and summary.get("kind") == "tabular":
         for t in summary.get("tables", []):
@@ -476,7 +499,6 @@ def _build_upload_snapshot(upload_id: str) -> dict:
         if preview:
             lines.append(f"Preview: {preview}")
     else:
-        # No summary (older upload) — fall back to whatever the row has
         if up.get("row_count"):
             lines.append(f"{up['row_count']} rows.")
         if up.get("chunk_count"):
@@ -567,6 +589,135 @@ async def core_saves(source_message_id: Optional[str] = None,
         "saved":   bool(found),
         "save_id": found["save_id"] if found else None,
     }
+
+
+# ── CORE TOPIC / DATA ENDPOINTS (Phase 4c) ─────────────────
+
+@app.get("/core/topics")
+async def core_list_topics():
+    """
+    List all topics for the current user (each with a save_count), plus an
+    'unsorted' count for saves that have no topic.
+    """
+    try:
+        topics = list_topics(CURRENT_USER_ID)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    try:
+        unsorted = list_saves(CURRENT_USER_ID, topic_id="__none__")
+        unsorted_count = len(unsorted)
+    except Exception:
+        unsorted_count = 0
+
+    try:
+        total = count_saves()
+    except Exception:
+        total = 0
+
+    return {
+        "topics":         topics,
+        "unsorted_count": unsorted_count,
+        "total_count":    total,
+    }
+
+
+@app.post("/core/topics")
+async def core_create_topic(body: TopicCreateRequest):
+    """Create a topic (idempotent on name). Returns the topic id."""
+    name = (body.name or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Topic name cannot be empty")
+    try:
+        topic_id = create_topic(CURRENT_USER_ID, name)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    return {"status": "created", "topic_id": topic_id, "name": name}
+
+
+@app.patch("/core/topics/{topic_id}")
+async def core_rename_topic(topic_id: str, body: TopicRenameRequest):
+    """Rename a topic."""
+    name = (body.name or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Topic name cannot be empty")
+    try:
+        ok = rename_topic(topic_id, name)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    if not ok:
+        raise HTTPException(status_code=404, detail="Topic not found")
+    return {"status": "renamed", "topic_id": topic_id, "name": name}
+
+
+@app.delete("/core/topics/{topic_id}")
+async def core_delete_topic(topic_id: str):
+    """
+    Delete a topic. Saves are NOT deleted — they fall back to Unsorted
+    (topic_id set to NULL via ON DELETE SET NULL).
+    """
+    try:
+        ok = delete_topic(topic_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    if not ok:
+        raise HTTPException(status_code=404, detail="Topic not found")
+    return {"status": "deleted", "topic_id": topic_id}
+
+
+@app.get("/core/saves/list")
+async def core_saves_list(topic_id: Optional[str] = None):
+    """
+    Browse saves for the current user.
+      - topic_id omitted     → all active saves
+      - topic_id='__none__'  → only Unsorted (no topic)
+      - topic_id='top_...'   → only that topic
+    """
+    try:
+        saves = list_saves(CURRENT_USER_ID, topic_id=topic_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    return {"saves": saves, "count": len(saves)}
+
+
+@app.patch("/core/saves/{save_id}")
+async def core_update_save(save_id: str, body: SaveUpdateRequest):
+    """
+    Move a save to a topic and/or update its note.
+      - clear_topic=true OR topic_id in ('', '__none__') → move to Unsorted
+      - topic_id='top_...'                               → move to that topic
+      - note provided                                    → update note
+    """
+    existing = get_save(save_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Save not found")
+
+    # Resolve the target topic_id
+    target_topic = existing.get("topic_id")
+    if body.clear_topic or body.topic_id in ("", "__none__"):
+        target_topic = None
+    elif body.topic_id is not None:
+        target_topic = body.topic_id
+
+    try:
+        update_save_topic(save_id, target_topic, note=body.note)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    return {"status": "updated", "save_id": save_id, "topic_id": target_topic}
+
+
+@app.delete("/core/saves/{save_id}")
+async def core_archive_save(save_id: str):
+    """Archive (soft-delete) a save. Recoverable in the DB; hidden from lists."""
+    existing = get_save(save_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Save not found")
+    try:
+        ok = archive_save(save_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    return {"status": "archived" if ok else "already_archived", "save_id": save_id}
 
 
 # ── SUPPORTING ENDPOINTS ───────────────────────────────────

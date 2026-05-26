@@ -35,7 +35,15 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:1
 .logo-icon{width:30px;height:30px;background:linear-gradient(135deg,#1f6feb,#39d353);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:15px}
 .logo-text{font-size:15px;font-weight:500}
 .logo-sub{font-size:11px;color:var(--dim);font-family:var(--mono)}
-.header-right{display:flex;align-items:center;gap:10px}
+.header-right{display:flex;align-items:center;gap:14px}
+
+/* My Core header button */
+.core-btn{background:var(--surface2);border:1px solid var(--border);color:var(--text);font-family:var(--sans);font-size:12px;padding:6px 12px;border-radius:7px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;transition:all .15s}
+.core-btn:hover{border-color:var(--purple);color:var(--purple)}
+.core-btn .ico{filter:grayscale(1) opacity(.7);transition:filter .15s}
+.core-btn:hover .ico{filter:grayscale(0) opacity(1)}
+.core-btn .count{font-family:var(--mono);font-size:10px;background:rgba(188,140,255,.15);color:var(--purple);padding:1px 6px;border-radius:10px}
+
 .status-dot{width:8px;height:8px;border-radius:50%;background:var(--teal);box-shadow:0 0 6px var(--teal);animation:pulse 2s infinite}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
 .status-text{font-size:12px;color:var(--dim);font-family:var(--mono)}
@@ -196,7 +204,7 @@ textarea::placeholder{color:var(--dim)}
 .restore-banner.visible{display:block}
 
 /* toast */
-.toast-container{position:fixed;top:60px;right:20px;display:flex;flex-direction:column;gap:8px;z-index:100;pointer-events:none}
+.toast-container{position:fixed;top:60px;right:20px;display:flex;flex-direction:column;gap:8px;z-index:200;pointer-events:none}
 .toast{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:10px 14px;font-size:13px;color:var(--text);min-width:240px;max-width:380px;box-shadow:0 4px 16px rgba(0,0,0,.4);transform:translateX(420px);transition:transform .25s ease;pointer-events:auto;cursor:pointer;line-height:1.4}
 .toast.show{transform:translateX(0)}
 .toast.success{border-left:3px solid var(--teal)}
@@ -204,6 +212,60 @@ textarea::placeholder{color:var(--dim)}
 .toast.core{border-left:3px solid var(--purple)}
 .toast-title{font-weight:500;margin-bottom:2px;font-size:12px}
 .toast-body{color:var(--dim);font-size:12px;font-family:var(--mono)}
+
+/* ── MY CORE MODAL (Phase 4c) ───────────────────────────── */
+.core-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:150;display:none;align-items:center;justify-content:center;padding:40px}
+.core-backdrop.open{display:flex}
+.core-modal{background:var(--bg);border:1px solid var(--border);border-radius:14px;width:100%;max-width:920px;height:100%;max-height:680px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 12px 48px rgba(0,0,0,.5)}
+.core-modal-head{padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.core-modal-title{font-size:16px;font-weight:500;display:flex;align-items:center;gap:9px}
+.core-modal-title .sub{font-size:11px;color:var(--dim);font-family:var(--mono);font-weight:400}
+.core-modal-close{background:none;border:none;color:var(--dim);font-size:20px;cursor:pointer;line-height:1;padding:2px 6px;border-radius:5px;transition:color .12s}
+.core-modal-close:hover{color:var(--text)}
+.core-modal-body{flex:1;display:flex;overflow:hidden}
+
+/* topics column */
+.core-topics{width:240px;border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;overflow:hidden}
+.core-topics-list{flex:1;overflow-y:auto;padding:10px}
+.core-topic{padding:9px 11px;border-radius:7px;cursor:pointer;display:flex;align-items:center;gap:8px;margin-bottom:3px;transition:background .1s;position:relative}
+.core-topic:hover{background:var(--surface2)}
+.core-topic.active{background:var(--surface3);border:1px solid var(--border)}
+.core-topic-name{flex:1;min-width:0;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.core-topic-count{font-family:var(--mono);font-size:10px;color:var(--dim);background:var(--surface3);padding:1px 7px;border-radius:10px;flex-shrink:0}
+.core-topic.active .core-topic-count{background:var(--bg)}
+.core-topic-acts{display:flex;gap:2px;opacity:0;transition:opacity .12s;flex-shrink:0}
+.core-topic:hover .core-topic-acts{opacity:1}
+.core-topic-act{background:none;border:none;color:var(--dim);cursor:pointer;font-size:12px;padding:1px 3px;line-height:1;border-radius:3px}
+.core-topic-act:hover{color:var(--text)}
+.core-topic-act.del:hover{color:var(--red)}
+.core-topic-special{color:var(--purple)}
+.core-topics-foot{padding:10px;border-top:1px solid var(--border);flex-shrink:0}
+.core-newtopic-row{display:flex;gap:6px}
+.core-newtopic-input{flex:1;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--sans);font-size:12px;padding:6px 9px;outline:none}
+.core-newtopic-input:focus{border-color:var(--purple)}
+.core-newtopic-btn{background:var(--purple);border:none;color:#000;border-radius:6px;font-size:13px;padding:0 11px;cursor:pointer;font-weight:600;transition:opacity .12s}
+.core-newtopic-btn:hover{opacity:.85}
+
+/* saves column */
+.core-saves{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.core-saves-head{padding:12px 18px;border-bottom:1px solid var(--border);font-size:12px;color:var(--dim);font-family:var(--mono);flex-shrink:0}
+.core-saves-list{flex:1;overflow-y:auto;padding:14px 18px;display:flex;flex-direction:column;gap:10px}
+.core-save-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 14px;transition:border-color .12s}
+.core-save-card:hover{border-color:var(--surface3)}
+.core-save-top{display:flex;align-items:center;gap:8px;margin-bottom:7px;flex-wrap:wrap}
+.core-save-kind{font-size:9px;font-family:var(--mono);padding:1px 6px;border-radius:3px;text-transform:uppercase;letter-spacing:.5px}
+.core-save-kind.message{background:rgba(88,166,255,.15);color:var(--blue)}
+.core-save-kind.upload{background:rgba(188,140,255,.15);color:var(--purple)}
+.core-save-title{font-size:13px;font-weight:500;flex:1;min-width:0}
+.core-save-date{font-size:10px;color:var(--dim);font-family:var(--mono)}
+.core-save-content{font-size:12px;color:var(--dim);line-height:1.55;white-space:pre-wrap;max-height:96px;overflow:hidden;margin-bottom:9px;position:relative}
+.core-save-foot{display:flex;align-items:center;gap:8px}
+.core-save-move{background:var(--surface2);border:1px solid var(--border);color:var(--text);font-family:var(--sans);font-size:11px;padding:4px 8px;border-radius:6px;outline:none;cursor:pointer}
+.core-save-move:focus{border-color:var(--purple)}
+.core-save-archive{background:none;border:1px solid var(--border);color:var(--dim);cursor:pointer;font-size:11px;font-family:var(--mono);padding:4px 9px;border-radius:6px;margin-left:auto;transition:all .12s}
+.core-save-archive:hover{border-color:var(--red);color:var(--red)}
+.core-empty{color:var(--dim);font-size:13px;text-align:center;padding:48px 20px;line-height:1.6}
+.core-empty-icon{font-size:34px;margin-bottom:10px;opacity:.5}
 
 ::-webkit-scrollbar{width:4px}
 ::-webkit-scrollbar-track{background:transparent}
@@ -221,6 +283,9 @@ textarea::placeholder{color:var(--dim)}
     </div>
   </div>
   <div class="header-right">
+    <button class="core-btn" id="coreBtn" onclick="openCoreModal()" title="Browse your saved core data">
+      <span class="ico">🗄</span> My Core <span class="count" id="coreCount">0</span>
+    </button>
     <div class="status-dot" id="statusDot"></div>
     <span class="status-text" id="statusText">connecting...</span>
   </div>
@@ -301,11 +366,46 @@ textarea::placeholder{color:var(--dim)}
 <!-- Toast container -->
 <div class="toast-container" id="toastContainer"></div>
 
+<!-- MY CORE MODAL (Phase 4c) -->
+<div class="core-backdrop" id="coreBackdrop" onclick="coreBackdropClick(event)">
+  <div class="core-modal">
+    <div class="core-modal-head">
+      <div class="core-modal-title">
+        🗄 My Core Data
+        <span class="sub" id="coreModalSub">your saved knowledge base</span>
+      </div>
+      <button class="core-modal-close" onclick="closeCoreModal()" title="Close (Esc)">✕</button>
+    </div>
+    <div class="core-modal-body">
+      <!-- topics -->
+      <div class="core-topics">
+        <div class="core-topics-list" id="coreTopicsList"></div>
+        <div class="core-topics-foot">
+          <div class="core-newtopic-row">
+            <input class="core-newtopic-input" id="newTopicInput" placeholder="New topic…"
+                   onkeydown="newTopicKeydown(event)" maxlength="60">
+            <button class="core-newtopic-btn" onclick="createCoreTopic()" title="Create topic">＋</button>
+          </div>
+        </div>
+      </div>
+      <!-- saves -->
+      <div class="core-saves">
+        <div class="core-saves-head" id="coreSavesHead">All saves</div>
+        <div class="core-saves-list" id="coreSavesList"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script>
 const API = 'http://localhost:8002';
 let isLoading       = false;
 let activeSessionId = null;
 let chartCounter    = 0;   // unique IDs for Plotly divs
+
+// Core modal state (Phase 4c)
+let coreTopics       = [];          // [{topic_id, name, save_count}]
+let coreSelectedTopic = null;       // null = All, '__none__' = Unsorted, 'top_..' = topic
 
 // Plotly dark layout template
 const PLOTLY_LAYOUT = {
@@ -325,6 +425,7 @@ async function init() {
   await checkHealth();
   await loadSessions();
   await loadUploads();
+  await refreshCoreCount();
 }
 
 async function checkHealth() {
@@ -718,6 +819,7 @@ async function saveMessage(messageId, btn) {
       btn.querySelector('.label').textContent = 'Saved';
     }
     showToast('core', 'Saved to core', data.title || '');
+    refreshCoreCount();
   } catch (e) {
     showToast('error', 'Save failed', e.message || 'Network error');
     if (btn) btn.disabled = false;
@@ -745,6 +847,7 @@ async function saveUpload(uploadId, filename) {
       btn.disabled = false;
     }
     showToast('core', 'Saved to core', data.title || filename);
+    refreshCoreCount();
   } catch (e) {
     showToast('error', 'Save failed', e.message || 'Network error');
     if (btn) btn.disabled = false;
@@ -792,6 +895,275 @@ function refreshSavedStates() {
       if (id) markMessageSavedState(id);
     });
   });
+}
+
+// ── My Core modal (Phase 4c) ──────────────────────────────
+async function refreshCoreCount() {
+  try {
+    const r = await fetch(`${API}/core/topics`);
+    if (!r.ok) return;
+    const d = await r.json();
+    const el = document.getElementById('coreCount');
+    if (el) el.textContent = d.total_count ?? 0;
+  } catch { /* silent */ }
+}
+
+function openCoreModal() {
+  document.getElementById('coreBackdrop').classList.add('open');
+  loadCoreTopics();
+}
+
+function closeCoreModal() {
+  document.getElementById('coreBackdrop').classList.remove('open');
+}
+
+function coreBackdropClick(e) {
+  // Close only when the backdrop itself (not the modal) is clicked
+  if (e.target === document.getElementById('coreBackdrop')) closeCoreModal();
+}
+
+async function loadCoreTopics() {
+  try {
+    const r = await fetch(`${API}/core/topics`);
+    const d = await r.json();
+    coreTopics = d.topics || [];
+    renderCoreTopics(d.unsorted_count ?? 0, d.total_count ?? 0);
+    // Default selection: All, unless a topic is already selected
+    selectCoreTopic(coreSelectedTopic ?? null, true);
+    // Update header count too
+    const cc = document.getElementById('coreCount');
+    if (cc) cc.textContent = d.total_count ?? 0;
+  } catch {
+    document.getElementById('coreTopicsList').innerHTML =
+      '<div class="core-empty">Could not load topics.</div>';
+  }
+}
+
+function renderCoreTopics(unsortedCount, totalCount) {
+  const list = document.getElementById('coreTopicsList');
+  let html = '';
+
+  // All
+  html += topicRow(null, 'All saves', totalCount, true);
+  // Unsorted
+  html += topicRow('__none__', 'Unsorted', unsortedCount, true);
+
+  // User topics
+  coreTopics.forEach(t => {
+    html += topicRow(t.topic_id, t.name, t.save_count || 0, false);
+  });
+
+  list.innerHTML = html;
+}
+
+function topicRow(id, name, count, isSpecial) {
+  const key      = id === null ? 'all' : id;
+  const isActive = (coreSelectedTopic ?? null) === (id ?? null);
+  const acts = isSpecial ? '' : `
+    <div class="core-topic-acts">
+      <button class="core-topic-act" onclick="renameCoreTopic(event,'${id}','${escHtml(name).replace(/'/g,'&#39;')}')" title="Rename">✏️</button>
+      <button class="core-topic-act del" onclick="deleteCoreTopic(event,'${id}','${escHtml(name).replace(/'/g,'&#39;')}')" title="Delete">✕</button>
+    </div>`;
+  const nameCls = isSpecial ? 'core-topic-name core-topic-special' : 'core-topic-name';
+  const idArg   = id === null ? 'null' : `'${id}'`;
+  return `
+    <div class="core-topic ${isActive ? 'active' : ''}" id="topic-${key}" onclick="selectCoreTopic(${idArg})">
+      <span class="${nameCls}">${escHtml(name)}</span>
+      <span class="core-topic-count">${count}</span>
+      ${acts}
+    </div>`;
+}
+
+async function selectCoreTopic(topicId, skipReRender) {
+  coreSelectedTopic = topicId ?? null;
+
+  // Update active highlight
+  document.querySelectorAll('.core-topic').forEach(el => el.classList.remove('active'));
+  const key = coreSelectedTopic === null ? 'all' : coreSelectedTopic;
+  const el  = document.getElementById(`topic-${key}`);
+  if (el) el.classList.add('active');
+
+  // Header label
+  const head = document.getElementById('coreSavesHead');
+  let label = 'All saves';
+  if (coreSelectedTopic === '__none__') label = 'Unsorted';
+  else if (coreSelectedTopic) {
+    const t = coreTopics.find(x => x.topic_id === coreSelectedTopic);
+    label = t ? t.name : 'Topic';
+  }
+  if (head) head.textContent = label;
+
+  await loadCoreSaves();
+}
+
+async function loadCoreSaves() {
+  const list = document.getElementById('coreSavesList');
+  list.innerHTML = '<div class="core-empty">Loading…</div>';
+  try {
+    let url = `${API}/core/saves/list`;
+    if (coreSelectedTopic) url += `?topic_id=${encodeURIComponent(coreSelectedTopic)}`;
+    const r = await fetch(url);
+    const d = await r.json();
+    renderCoreSaves(d.saves || []);
+  } catch {
+    list.innerHTML = '<div class="core-empty">Could not load saves.</div>';
+  }
+}
+
+function renderCoreSaves(saves) {
+  const list = document.getElementById('coreSavesList');
+  if (!saves.length) {
+    list.innerHTML = `
+      <div class="core-empty">
+        <div class="core-empty-icon">🗂</div>
+        Nothing here yet.<br>
+        Save an answer or upload with the 💾 button to build your core.
+      </div>`;
+    return;
+  }
+
+  // Build the topic <option> list once (shared across cards)
+  const topicOptions = (currentTopicId) => {
+    let opts = `<option value="__none__" ${!currentTopicId ? 'selected' : ''}>Unsorted</option>`;
+    coreTopics.forEach(t => {
+      opts += `<option value="${t.topic_id}" ${t.topic_id === currentTopicId ? 'selected' : ''}>${escHtml(t.name)}</option>`;
+    });
+    return opts;
+  };
+
+  list.innerHTML = saves.map(s => {
+    const kind     = s.kind === 'upload' ? 'upload' : 'message';
+    const date     = formatDate(s.created_at);
+    const content  = escHtml(s.content || '');
+    const title    = escHtml(s.title || '(untitled)');
+    return `
+      <div class="core-save-card" id="savecard-${s.save_id}">
+        <div class="core-save-top">
+          <span class="core-save-kind ${kind}">${kind}</span>
+          <span class="core-save-title">${title}</span>
+          <span class="core-save-date">${date}</span>
+        </div>
+        <div class="core-save-content">${content}</div>
+        <div class="core-save-foot">
+          <select class="core-save-move" onchange="moveSaveToTopic('${s.save_id}', this.value)" title="Move to topic">
+            ${topicOptions(s.topic_id)}
+          </select>
+          <button class="core-save-archive" onclick="archiveCoreSave('${s.save_id}')" title="Remove from core">Archive</button>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+async function createCoreTopic() {
+  const input = document.getElementById('newTopicInput');
+  const name  = input.value.trim();
+  if (!name) return;
+  try {
+    const r = await fetch(`${API}/core/topics`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ name }),
+    });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      showToast('error', 'Could not create topic', err.detail || 'Server error');
+      return;
+    }
+    input.value = '';
+    showToast('core', 'Topic created', name);
+    await loadCoreTopics();
+  } catch (e) {
+    showToast('error', 'Could not create topic', e.message || 'Network error');
+  }
+}
+
+function newTopicKeydown(e) {
+  if (e.key === 'Enter') { e.preventDefault(); createCoreTopic(); }
+}
+
+async function renameCoreTopic(e, topicId, currentName) {
+  e.stopPropagation();
+  const name = prompt('Rename topic:', currentName);
+  if (name === null) return;
+  const trimmed = name.trim();
+  if (!trimmed || trimmed === currentName) return;
+  try {
+    const r = await fetch(`${API}/core/topics/${topicId}`, {
+      method:  'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ name: trimmed }),
+    });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      showToast('error', 'Rename failed', err.detail || 'Server error');
+      return;
+    }
+    await loadCoreTopics();
+  } catch (e2) {
+    showToast('error', 'Rename failed', e2.message || 'Network error');
+  }
+}
+
+async function deleteCoreTopic(e, topicId, name) {
+  e.stopPropagation();
+  if (!confirm(`Delete topic "${name}"?\n\nSaves inside it are kept and moved to Unsorted.`)) return;
+  try {
+    const r = await fetch(`${API}/core/topics/${topicId}`, { method: 'DELETE' });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      showToast('error', 'Delete failed', err.detail || 'Server error');
+      return;
+    }
+    showToast('core', 'Topic deleted', `${name} · saves moved to Unsorted`);
+    // If we were viewing the deleted topic, fall back to All
+    if (coreSelectedTopic === topicId) coreSelectedTopic = null;
+    await loadCoreTopics();
+  } catch (e2) {
+    showToast('error', 'Delete failed', e2.message || 'Network error');
+  }
+}
+
+async function moveSaveToTopic(saveId, topicValue) {
+  const body = (topicValue === '__none__')
+    ? { clear_topic: true }
+    : { topic_id: topicValue };
+  try {
+    const r = await fetch(`${API}/core/saves/${saveId}`, {
+      method:  'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify(body),
+    });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      showToast('error', 'Move failed', err.detail || 'Server error');
+      return;
+    }
+    showToast('core', 'Save moved', topicValue === '__none__' ? 'Unsorted' : 'topic updated');
+    // Refresh topics (counts changed) and current view
+    await loadCoreTopics();
+  } catch (e) {
+    showToast('error', 'Move failed', e.message || 'Network error');
+  }
+}
+
+async function archiveCoreSave(saveId) {
+  if (!confirm('Remove this item from your core?\n\n(It is archived, not permanently deleted.)')) return;
+  try {
+    const r = await fetch(`${API}/core/saves/${saveId}`, { method: 'DELETE' });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      showToast('error', 'Archive failed', err.detail || 'Server error');
+      return;
+    }
+    showToast('core', 'Removed from core', '');
+    // Remove the card immediately, then refresh counts
+    const card = document.getElementById(`savecard-${saveId}`);
+    if (card) card.remove();
+    await loadCoreTopics();
+    refreshSavedStates();   // un-fill any on-screen message button if applicable
+  } catch (e) {
+    showToast('error', 'Archive failed', e.message || 'Network error');
+  }
 }
 
 // ── Toast ─────────────────────────────────────────────────
@@ -1157,6 +1529,14 @@ function escHtml(s) {
     .replace(/&/g,'&amp;').replace(/</g,'&lt;')
     .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
+
+// Global Esc handler — close the core modal if open
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    const bd = document.getElementById('coreBackdrop');
+    if (bd && bd.classList.contains('open')) closeCoreModal();
+  }
+});
 
 init();
 </script>
