@@ -1,6 +1,6 @@
 """
 =============================================================
-CoReckoner — FastAPI Backend  (Phase 4a)
+CoReckoner — FastAPI Backend  (Phase 4b-2)
 =============================================================
 
 Phase 3 C3:
@@ -8,13 +8,18 @@ Phase 3 C3:
   - DELETE /sessions/{id} cascade also removes ChromaDB vectors
 
 Phase 4 warm-up:
-  - classify_question() receives session_id so the router knows about
-    uploaded PDFs and routes accordingly.
+  - classify_question() receives session_id (router PDF-aware)
 
 Phase 4a:
-  - ensure_default_user() called on startup; DEFAULT_USER_ID available
-  - /stats now reports user_count, topic_count, save_count
-  - No user-visible changes — database foundation only.
+  - ensure_default_user() on startup; /stats reports core counts
+
+Phase 4b-2 (save button):
+  - ChatResponse now carries message_id so a freshly-sent assistant
+    message can be saved to core immediately.
+  - POST /core/save     — save a message or upload to the user's core
+  - GET  /core/saves    — look up saves (for filled-button state)
+  Saves go to the default unsorted bucket (no topic at save time);
+  topic organisation arrives in 4c.
 """
 
 import os
@@ -54,6 +59,13 @@ from db.session_store import (
     count_topics,
     count_saves,
     DEFAULT_USER_ID,
+    # Phase 4b-2
+    get_session_messages,
+    get_message_artifacts,
+    get_upload,
+    create_save,
+    get_save,
+    find_save_by_source,
 )
 from uploads.session_db import delete_session_db
 from uploads.document   import delete_session_vectors
@@ -74,7 +86,7 @@ async def lifespan(app: FastAPI):
     global CURRENT_USER_ID
     print("\n" + "═" * 52)
     print("  CoReckoner — Accounting AI Chatbot")
-    print("  Phase 4a: users + core_topics + core_saves schema")
+    print("  Phase 4b-2: save button (core saves)")
     print("═" * 52)
     try:
         init_db()
@@ -106,7 +118,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="CoReckoner — Accounting AI Chatbot",
     description="Hybrid RAG + Text-to-SQL with persistent sessions, CSV/Excel/PDF uploads",
-    version="2.6.0",
+    version="2.7.0",
     lifespan=lifespan,
 )
 
@@ -133,6 +145,7 @@ class ChatRequest(BaseModel):
 
 class ChatResponse(BaseModel):
     session_id:        str
+    message_id:        Optional[str] = None   # Phase 4b-2: assistant message id
     question:          str
     answer:            str
     pipeline:          str
@@ -148,6 +161,12 @@ class ChatResponse(BaseModel):
 
 class SessionRenameRequest(BaseModel):
     title: str
+
+
+class CoreSaveRequest(BaseModel):
+    kind:      str                      # 'message' | 'upload'
+    source_id: str                      # message_id or upload_id
+    note:      Optional[str] = None
 
 
 def get_llm() -> ChatOpenAI:
@@ -290,6 +309,7 @@ async def chat(request: ChatRequest):
 
     return ChatResponse(
         session_id        = session_id,
+        message_id        = asst_msg_id,
         question          = question,
         answer            = final_answer,
         pipeline          = pipeline_used,
@@ -357,6 +377,10 @@ async def remove_session(session_id: str):
       1. coreckoner.db rows (sessions + messages + artifacts + uploads — via FK)
       2. Per-session SQLite DB at outputs/sessions/{id}.db
       3. Per-session ChromaDB vectors in 'user_uploads' collection (C3)
+
+    NOTE (Phase 4b): core_saves are intentionally NOT deleted here — saved
+    items outlive the session they came from (decoupled storage). Their
+    source_session_id may dangle, which is fine.
     """
     try:
         deleted = delete_session(session_id)
@@ -380,6 +404,169 @@ async def remove_session(session_id: str):
         print(f"[main] cascade: delete_session_vectors failed for {session_id}: {e}")
 
     return {"status": "deleted", "session_id": session_id}
+
+
+# ── CORE SAVE ENDPOINTS (Phase 4b-2) ───────────────────────
+
+def _build_message_snapshot(message_id: str) -> dict:
+    """
+    Assemble a rich, immutable snapshot of an assistant message:
+    full text + its artifacts (sql, result, citations, chart, route).
+    Returns {title, content, metadata, source_session_id} or raises 404.
+    """
+    # Find the message by scanning sessions is expensive; instead read
+    # artifacts directly and the message row via a targeted helper.
+    # get_message_artifacts works on message_id; we still need the message
+    # row for content + session_id, so fetch via a small query helper.
+    from db.session_store import _get_conn  # local import; internal helper
+    conn = _get_conn()
+    try:
+        row = conn.execute(
+            "SELECT message_id, session_id, role, content, pipeline_used FROM messages WHERE message_id=?",
+            (message_id,)
+        ).fetchone()
+    finally:
+        conn.close()
+
+    if not row:
+        raise HTTPException(status_code=404, detail=f"Message {message_id} not found")
+
+    msg = dict(row)
+    artifacts = get_message_artifacts(message_id)
+
+    # Fold artifacts into a compact metadata dict
+    meta: dict = {"pipeline": msg.get("pipeline_used")}
+    for a in artifacts:
+        meta[a["artifact_type"]] = a.get("content")
+
+    content = msg.get("content", "") or ""
+    title   = content[:80].strip() or "(saved message)"
+
+    return {
+        "title":             title,
+        "content":           content,
+        "metadata":          meta,
+        "source_session_id": msg.get("session_id"),
+    }
+
+
+def _build_upload_snapshot(upload_id: str) -> dict:
+    """
+    Assemble a snapshot of an upload from the summary captured at ingest
+    (Phase 4b-1). Returns {title, content, metadata, source_session_id}.
+    """
+    up = get_upload(upload_id)
+    if not up:
+        raise HTTPException(status_code=404, detail=f"Upload {upload_id} not found")
+
+    filename = up.get("filename", "(file)")
+    summary  = up.get("summary")  # dict captured at ingest, or None
+
+    # Build a human-readable content blurb from the summary
+    lines = [f"Uploaded file: {filename}"]
+    if summary and summary.get("kind") == "tabular":
+        for t in summary.get("tables", []):
+            cols = ", ".join(t.get("columns", []))
+            lines.append(f"Table '{t.get('table_name')}' — {t.get('row_count')} rows.")
+            if cols:
+                lines.append(f"Columns: {cols}")
+    elif summary and summary.get("kind") == "document":
+        lines.append(f"{summary.get('page_count', 0)} pages · {summary.get('chunk_count', 0)} chunks.")
+        preview = summary.get("preview_text")
+        if preview:
+            lines.append(f"Preview: {preview}")
+    else:
+        # No summary (older upload) — fall back to whatever the row has
+        if up.get("row_count"):
+            lines.append(f"{up['row_count']} rows.")
+        if up.get("chunk_count"):
+            lines.append(f"{up['chunk_count']} chunks.")
+
+    content = "\n".join(lines)
+
+    return {
+        "title":             filename,
+        "content":           content,
+        "metadata":          {"upload": summary, "file_type": up.get("file_type"),
+                              "target": up.get("target")},
+        "source_session_id": up.get("session_id"),
+    }
+
+
+@app.post("/core/save")
+async def core_save(body: CoreSaveRequest):
+    """
+    Save a message or upload to the current user's core.
+    No topic at save time — goes to the default unsorted bucket (4c organises).
+    Idempotent: saving the same source twice returns the existing save.
+    """
+    kind = (body.kind or "").strip()
+    if kind not in ("message", "upload"):
+        raise HTTPException(status_code=400, detail="kind must be 'message' or 'upload'")
+    if not body.source_id:
+        raise HTTPException(status_code=400, detail="source_id is required")
+
+    if kind == "message":
+        snap = _build_message_snapshot(body.source_id)
+        try:
+            save_id = create_save(
+                user_id           = CURRENT_USER_ID,
+                kind              = "message",
+                title             = snap["title"],
+                content           = snap["content"],
+                metadata_json     = snap["metadata"],
+                note              = body.note,
+                source_session_id = snap["source_session_id"],
+                source_message_id = body.source_id,
+            )
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Save failed: {e}")
+    else:
+        snap = _build_upload_snapshot(body.source_id)
+        try:
+            save_id = create_save(
+                user_id           = CURRENT_USER_ID,
+                kind              = "upload",
+                title             = snap["title"],
+                content           = snap["content"],
+                metadata_json     = snap["metadata"],
+                note              = body.note,
+                source_session_id = snap["source_session_id"],
+                source_upload_id  = body.source_id,
+            )
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Save failed: {e}")
+
+    saved = get_save(save_id)
+    return {
+        "status":  "saved",
+        "save_id": save_id,
+        "kind":    kind,
+        "title":   saved["title"] if saved else snap["title"],
+    }
+
+
+@app.get("/core/saves")
+async def core_saves(source_message_id: Optional[str] = None,
+                     source_upload_id:  Optional[str] = None):
+    """
+    Look up an active save by its source (for filled-button state).
+    Returns {saved: bool, save_id: str|None}.
+    """
+    if not source_message_id and not source_upload_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Provide source_message_id or source_upload_id",
+        )
+    found = find_save_by_source(
+        CURRENT_USER_ID,
+        source_message_id=source_message_id,
+        source_upload_id=source_upload_id,
+    )
+    return {
+        "saved":   bool(found),
+        "save_id": found["save_id"] if found else None,
+    }
 
 
 # ── SUPPORTING ENDPOINTS ───────────────────────────────────
