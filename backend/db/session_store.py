@@ -7,17 +7,24 @@ All reads and writes to coreckoner.db go through this module.
 No business logic here — pure CRUD only.
 
 Tables:
-  sessions   — one row per conversation
-  messages   — one row per user or assistant turn
-  artifacts  — one row per SQL result, citation set, or chart
-  uploads    — one row per user-uploaded file (CSV/Excel/PDF/text)
+  sessions    — one row per conversation
+  messages    — one row per user or assistant turn
+  artifacts   — one row per SQL result, citation set, or chart
+  uploads     — one row per user-uploaded file (CSV/Excel/PDF/text)
+  users       — one row per user (Phase 4a; single 'default' user for now)
+  core_topics — one row per user-defined topic (Phase 4a)
+  core_saves  — one row per saved message/upload committed to core (Phase 4a)
 
 Usage:
-  from backend.db.session_store import (
+  from db.session_store import (
       init_db, create_session, get_all_sessions,
       get_session, save_message, save_artifact,
       delete_session,
-      create_upload, list_uploads, get_upload, delete_upload_record
+      create_upload, list_uploads, get_upload, delete_upload_record,
+      ensure_default_user, get_user,
+      create_topic, list_topics, rename_topic, delete_topic,
+      create_save, list_saves, get_save, update_save_topic, archive_save,
+      count_users, count_topics, count_saves,
   )
 """
 
@@ -31,6 +38,9 @@ from datetime import datetime, timezone
 # Separate from accounting.db — never mix persistence and demo data
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 DB_PATH      = PROJECT_ROOT / "outputs" / "coreckoner.db"
+
+# The hard-coded single user for Phase 4 (real auth arrives in 4f).
+DEFAULT_USER_ID = "default"
 
 
 def _get_conn() -> sqlite3.Connection:
@@ -94,6 +104,41 @@ def init_db() -> None:
                 uploaded_at  TEXT NOT NULL
             );
 
+            -- ── Phase 4a: users / core_topics / core_saves ──────────
+
+            CREATE TABLE IF NOT EXISTS users (
+                user_id      TEXT PRIMARY KEY,
+                email        TEXT UNIQUE,
+                display_name TEXT,
+                created_at   TEXT NOT NULL,
+                is_default   INTEGER NOT NULL DEFAULT 0
+            );
+
+            CREATE TABLE IF NOT EXISTS core_topics (
+                topic_id    TEXT PRIMARY KEY,
+                user_id     TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+                name        TEXT NOT NULL,
+                created_at  TEXT NOT NULL,
+                UNIQUE(user_id, name)
+            );
+
+            CREATE TABLE IF NOT EXISTS core_saves (
+                save_id           TEXT PRIMARY KEY,
+                user_id           TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+                topic_id          TEXT REFERENCES core_topics(topic_id) ON DELETE SET NULL,
+                kind              TEXT NOT NULL CHECK(kind IN ('message','upload')),
+                source_session_id TEXT,
+                source_message_id TEXT,
+                source_upload_id  TEXT,
+                title             TEXT,
+                content           TEXT,
+                metadata_json     TEXT,
+                note              TEXT,
+                embedding_json    TEXT,     -- cached embedding for 4d recall (empty until 4d)
+                created_at        TEXT NOT NULL,
+                archived_at       TEXT
+            );
+
             CREATE INDEX IF NOT EXISTS idx_messages_session
                 ON messages(session_id, timestamp);
 
@@ -102,6 +147,15 @@ def init_db() -> None:
 
             CREATE INDEX IF NOT EXISTS idx_uploads_session
                 ON uploads(session_id, uploaded_at);
+
+            CREATE INDEX IF NOT EXISTS idx_core_saves_user
+                ON core_saves(user_id, archived_at);
+
+            CREATE INDEX IF NOT EXISTS idx_core_saves_topic
+                ON core_saves(topic_id);
+
+            CREATE INDEX IF NOT EXISTS idx_core_topics_user
+                ON core_topics(user_id);
         """)
         conn.commit()
     finally:
@@ -404,5 +458,359 @@ def delete_upload_record(upload_id: str) -> bool:
         cur = conn.execute("DELETE FROM uploads WHERE upload_id=?", (upload_id,))
         conn.commit()
         return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
+# =============================================================
+# PHASE 4a — Users / Topics / Core Saves
+# =============================================================
+
+# ── Users ──────────────────────────────────────────────────
+
+def ensure_default_user() -> str:
+    """
+    Create the hard-coded single user if it doesn't exist.
+    Idempotent — safe to call on every startup.
+    Returns DEFAULT_USER_ID.
+    """
+    conn = _get_conn()
+    try:
+        row = conn.execute(
+            "SELECT user_id FROM users WHERE user_id=?", (DEFAULT_USER_ID,)
+        ).fetchone()
+        if not row:
+            conn.execute(
+                """INSERT INTO users (user_id, email, display_name, created_at, is_default)
+                   VALUES (?,?,?,?,1)""",
+                (DEFAULT_USER_ID, None, "Default User", _now())
+            )
+            conn.commit()
+        return DEFAULT_USER_ID
+    finally:
+        conn.close()
+
+
+def get_user(user_id: str) -> dict | None:
+    """Return user row, or None if not found."""
+    conn = _get_conn()
+    try:
+        row = conn.execute(
+            "SELECT * FROM users WHERE user_id=?", (user_id,)
+        ).fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+# ── Topics ─────────────────────────────────────────────────
+
+def create_topic(user_id: str, name: str) -> str:
+    """
+    Create a topic for a user. Topic names are unique per user.
+    If the topic already exists, returns the existing topic_id.
+    """
+    name = (name or "").strip()
+    if not name:
+        raise ValueError("Topic name cannot be empty")
+
+    conn = _get_conn()
+    try:
+        existing = conn.execute(
+            "SELECT topic_id FROM core_topics WHERE user_id=? AND name=?",
+            (user_id, name)
+        ).fetchone()
+        if existing:
+            return existing["topic_id"]
+
+        topic_id = f"top_{uuid.uuid4().hex[:12]}"
+        conn.execute(
+            "INSERT INTO core_topics (topic_id, user_id, name, created_at) VALUES (?,?,?,?)",
+            (topic_id, user_id, name, _now())
+        )
+        conn.commit()
+        return topic_id
+    finally:
+        conn.close()
+
+
+def list_topics(user_id: str) -> list[dict]:
+    """
+    Return all topics for a user, with a save_count per topic.
+    Ordered alphabetically by name.
+    """
+    conn = _get_conn()
+    try:
+        rows = conn.execute(
+            """SELECT t.topic_id, t.user_id, t.name, t.created_at,
+                      COUNT(s.save_id) AS save_count
+               FROM core_topics t
+               LEFT JOIN core_saves s
+                      ON s.topic_id = t.topic_id AND s.archived_at IS NULL
+               WHERE t.user_id=?
+               GROUP BY t.topic_id
+               ORDER BY t.name COLLATE NOCASE ASC""",
+            (user_id,)
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def rename_topic(topic_id: str, new_name: str) -> bool:
+    """Rename a topic. Returns True if a row was updated."""
+    new_name = (new_name or "").strip()
+    if not new_name:
+        raise ValueError("Topic name cannot be empty")
+    conn = _get_conn()
+    try:
+        cur = conn.execute(
+            "UPDATE core_topics SET name=? WHERE topic_id=?",
+            (new_name, topic_id)
+        )
+        conn.commit()
+        return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
+def delete_topic(topic_id: str) -> bool:
+    """
+    Delete a topic. Saves keep their data but lose the topic
+    (topic_id set to NULL via ON DELETE SET NULL).
+    Returns True if a row was deleted.
+    """
+    conn = _get_conn()
+    try:
+        cur = conn.execute("DELETE FROM core_topics WHERE topic_id=?", (topic_id,))
+        conn.commit()
+        return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
+# ── Core saves ─────────────────────────────────────────────
+
+def create_save(
+    user_id:           str,
+    kind:              str,                 # 'message' | 'upload'
+    title:             str | None = None,
+    content:           str | None = None,
+    metadata_json:     dict | list | str | None = None,
+    note:              str | None = None,
+    topic_id:          str | None = None,
+    source_session_id: str | None = None,
+    source_message_id: str | None = None,
+    source_upload_id:  str | None = None,
+) -> str:
+    """
+    Commit a message or upload to the user's core.
+
+    Idempotency: if a save already exists for the same source
+    (message_id or upload_id) and user, returns the existing save_id
+    instead of creating a duplicate.
+
+    Returns the save_id.
+    """
+    if kind not in ("message", "upload"):
+        raise ValueError("kind must be 'message' or 'upload'")
+
+    conn = _get_conn()
+    try:
+        # Idempotency check
+        if kind == "message" and source_message_id:
+            existing = conn.execute(
+                """SELECT save_id FROM core_saves
+                   WHERE user_id=? AND source_message_id=? AND archived_at IS NULL""",
+                (user_id, source_message_id)
+            ).fetchone()
+            if existing:
+                return existing["save_id"]
+        elif kind == "upload" and source_upload_id:
+            existing = conn.execute(
+                """SELECT save_id FROM core_saves
+                   WHERE user_id=? AND source_upload_id=? AND archived_at IS NULL""",
+                (user_id, source_upload_id)
+            ).fetchone()
+            if existing:
+                return existing["save_id"]
+
+        save_id = f"sav_{uuid.uuid4().hex[:12]}"
+        meta_str = None
+        if metadata_json is not None:
+            meta_str = (metadata_json if isinstance(metadata_json, str)
+                        else json.dumps(metadata_json, ensure_ascii=False))
+
+        conn.execute(
+            """INSERT INTO core_saves
+               (save_id, user_id, topic_id, kind,
+                source_session_id, source_message_id, source_upload_id,
+                title, content, metadata_json, note, embedding_json,
+                created_at, archived_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (
+                save_id, user_id, topic_id, kind,
+                source_session_id, source_message_id, source_upload_id,
+                title, content, meta_str, note, None,
+                _now(), None
+            )
+        )
+        conn.commit()
+        return save_id
+    finally:
+        conn.close()
+
+
+def _row_to_save(row: sqlite3.Row) -> dict:
+    """Convert a core_saves row to a dict, parsing JSON fields."""
+    d = dict(row)
+    if d.get("metadata_json"):
+        try:
+            d["metadata"] = json.loads(d["metadata_json"])
+        except Exception:
+            d["metadata"] = d["metadata_json"]
+    else:
+        d["metadata"] = None
+    return d
+
+
+def list_saves(user_id: str, topic_id: str | None = None,
+               include_archived: bool = False) -> list[dict]:
+    """
+    Return saves for a user, newest first.
+    Optionally filter by topic_id. Archived saves excluded by default.
+    Pass topic_id='__none__' to get only untopiced saves.
+    """
+    conn = _get_conn()
+    try:
+        clauses = ["user_id=?"]
+        params  = [user_id]
+
+        if topic_id == "__none__":
+            clauses.append("topic_id IS NULL")
+        elif topic_id is not None:
+            clauses.append("topic_id=?")
+            params.append(topic_id)
+
+        if not include_archived:
+            clauses.append("archived_at IS NULL")
+
+        where = " AND ".join(clauses)
+        rows = conn.execute(
+            f"""SELECT save_id, user_id, topic_id, kind,
+                       source_session_id, source_message_id, source_upload_id,
+                       title, content, metadata_json, note,
+                       created_at, archived_at
+                FROM core_saves
+                WHERE {where}
+                ORDER BY created_at DESC""",
+            tuple(params)
+        ).fetchall()
+        return [_row_to_save(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def get_save(save_id: str) -> dict | None:
+    """Return a single save (including embedding_json), or None."""
+    conn = _get_conn()
+    try:
+        row = conn.execute(
+            "SELECT * FROM core_saves WHERE save_id=?", (save_id,)
+        ).fetchone()
+        return _row_to_save(row) if row else None
+    finally:
+        conn.close()
+
+
+def update_save_topic(save_id: str, topic_id: str | None,
+                      note: str | None = None) -> bool:
+    """
+    Move a save to a topic (or to no topic if topic_id is None),
+    and optionally update its note. Returns True if updated.
+    """
+    conn = _get_conn()
+    try:
+        if note is not None:
+            cur = conn.execute(
+                "UPDATE core_saves SET topic_id=?, note=? WHERE save_id=?",
+                (topic_id, note, save_id)
+            )
+        else:
+            cur = conn.execute(
+                "UPDATE core_saves SET topic_id=? WHERE save_id=?",
+                (topic_id, save_id)
+            )
+        conn.commit()
+        return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
+def archive_save(save_id: str) -> bool:
+    """Soft-delete a save (sets archived_at). Returns True if updated."""
+    conn = _get_conn()
+    try:
+        cur = conn.execute(
+            "UPDATE core_saves SET archived_at=? WHERE save_id=? AND archived_at IS NULL",
+            (_now(), save_id)
+        )
+        conn.commit()
+        return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
+def find_save_by_source(user_id: str, source_message_id: str | None = None,
+                        source_upload_id: str | None = None) -> dict | None:
+    """
+    Look up an active save by its source. Used by the frontend to render
+    the 'already saved' (filled) state on the 💾 button.
+    """
+    conn = _get_conn()
+    try:
+        if source_message_id:
+            row = conn.execute(
+                """SELECT * FROM core_saves
+                   WHERE user_id=? AND source_message_id=? AND archived_at IS NULL""",
+                (user_id, source_message_id)
+            ).fetchone()
+        elif source_upload_id:
+            row = conn.execute(
+                """SELECT * FROM core_saves
+                   WHERE user_id=? AND source_upload_id=? AND archived_at IS NULL""",
+                (user_id, source_upload_id)
+            ).fetchone()
+        else:
+            return None
+        return _row_to_save(row) if row else None
+    finally:
+        conn.close()
+
+
+# ── Counts (for /stats) ────────────────────────────────────
+
+def count_users() -> int:
+    conn = _get_conn()
+    try:
+        return conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+    finally:
+        conn.close()
+
+
+def count_topics() -> int:
+    conn = _get_conn()
+    try:
+        return conn.execute("SELECT COUNT(*) FROM core_topics").fetchone()[0]
+    finally:
+        conn.close()
+
+
+def count_saves() -> int:
+    conn = _get_conn()
+    try:
+        return conn.execute(
+            "SELECT COUNT(*) FROM core_saves WHERE archived_at IS NULL"
+        ).fetchone()[0]
     finally:
         conn.close()

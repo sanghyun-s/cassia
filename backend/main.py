@@ -1,6 +1,6 @@
 """
 =============================================================
-CoReckoner — FastAPI Backend  (Phase 3 C3 + Phase 4 warm-up)
+CoReckoner — FastAPI Backend  (Phase 4a)
 =============================================================
 
 Phase 3 C3:
@@ -8,9 +8,13 @@ Phase 3 C3:
   - DELETE /sessions/{id} cascade also removes ChromaDB vectors
 
 Phase 4 warm-up:
-  - classify_question() now receives session_id so the router knows
-    about uploaded PDFs and routes accordingly (fixes "What were Apple's
-    total net sales?" being misrouted to SQL).
+  - classify_question() receives session_id so the router knows about
+    uploaded PDFs and routes accordingly.
+
+Phase 4a:
+  - ensure_default_user() called on startup; DEFAULT_USER_ID available
+  - /stats now reports user_count, topic_count, save_count
+  - No user-visible changes — database foundation only.
 """
 
 import os
@@ -45,6 +49,11 @@ from db.session_store import (
     save_artifact,
     update_session_title,
     touch_session,
+    ensure_default_user,
+    count_users,
+    count_topics,
+    count_saves,
+    DEFAULT_USER_ID,
 )
 from uploads.session_db import delete_session_db
 from uploads.document   import delete_session_vectors
@@ -55,18 +64,29 @@ PROJECT_ROOT = Path(__file__).parent.parent
 DB_PATH      = PROJECT_ROOT / "outputs" / "accounting.db"
 CHROMA_DIR   = PROJECT_ROOT / "outputs" / "chroma_db"
 
+# Set on startup by ensure_default_user(). Phase 4 uses this single user
+# until real auth lands in 4f.
+CURRENT_USER_ID = DEFAULT_USER_ID
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    global CURRENT_USER_ID
     print("\n" + "═" * 52)
     print("  CoReckoner — Accounting AI Chatbot")
-    print("  Phase 3 C3 + Phase 4 warm-up (router PDF-aware)")
+    print("  Phase 4a: users + core_topics + core_saves schema")
     print("═" * 52)
     try:
         init_db()
         print("  ✓ coreckoner.db initialised")
     except Exception as e:
         print(f"  ⚠ coreckoner.db init failed: {e}")
+
+    try:
+        CURRENT_USER_ID = ensure_default_user()
+        print(f"  ✓ default user ensured ({CURRENT_USER_ID})")
+    except Exception as e:
+        print(f"  ⚠ ensure_default_user failed: {e}")
 
     if not os.getenv("OPENAI_API_KEY"):
         print("  ❌ OPENAI_API_KEY not found")
@@ -86,7 +106,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="CoReckoner — Accounting AI Chatbot",
     description="Hybrid RAG + Text-to-SQL with persistent sessions, CSV/Excel/PDF uploads",
-    version="2.5.1",
+    version="2.6.0",
     lifespan=lifespan,
 )
 
@@ -336,7 +356,7 @@ async def remove_session(session_id: str):
     Delete a session and cascade cleanup across three layers:
       1. coreckoner.db rows (sessions + messages + artifacts + uploads — via FK)
       2. Per-session SQLite DB at outputs/sessions/{id}.db
-      3. Per-session ChromaDB vectors in 'user_uploads' collection (NEW in C3)
+      3. Per-session ChromaDB vectors in 'user_uploads' collection (C3)
     """
     try:
         deleted = delete_session(session_id)
@@ -404,6 +424,15 @@ async def get_stats():
         stats["session_count"] = len(get_all_sessions())
     except Exception:
         stats["session_count"] = 0
+
+    # Phase 4a counts
+    try:
+        stats["user_count"]  = count_users()
+        stats["topic_count"] = count_topics()
+        stats["save_count"]  = count_saves()
+    except Exception as e:
+        print(f"[main] stats core counts failed: {e}")
+
     return stats
 
 
