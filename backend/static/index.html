@@ -101,6 +101,7 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:1
 .tag-sql{background:rgba(88,166,255,.15);color:var(--blue)}
 .tag-rag{background:rgba(188,140,255,.15);color:var(--purple)}
 .tag-both{background:rgba(57,211,83,.15);color:var(--teal)}
+.tag-core{background:rgba(188,140,255,.15);color:var(--purple)}
 
 /* CHAT AREA */
 .chat-area{flex:1;display:flex;flex-direction:column;overflow:hidden}
@@ -116,6 +117,7 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:1
 .chip-sql{border-color:var(--blue);color:var(--blue)}
 .chip-rag{border-color:var(--purple);color:var(--purple)}
 .chip-both{border-color:var(--teal);color:var(--teal)}
+.chip-core{border-color:var(--purple);color:var(--purple)}
 
 /* messages */
 .msg{display:flex;gap:12px;animation:fadeIn .2s ease}
@@ -142,6 +144,8 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:1
 .badge-sql{background:rgba(88,166,255,.15);color:var(--blue)}
 .badge-rag{background:rgba(188,140,255,.15);color:var(--purple)}
 .badge-both{background:rgba(57,211,83,.15);color:var(--teal)}
+.badge-core{background:rgba(188,140,255,.2);color:var(--purple);border:1px solid rgba(188,140,255,.4)}
+.badge-core_recall{background:rgba(188,140,255,.2);color:var(--purple);border:1px solid rgba(188,140,255,.4)}
 
 /* response type badge */
 .rtype-badge{font-size:11px;font-family:var(--mono);padding:3px 9px;border-radius:4px;font-weight:600;letter-spacing:.3px}
@@ -173,6 +177,17 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:1
 .sources{margin-top:10px;display:flex;flex-direction:column;gap:4px}
 .source-item{background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-size:11px;font-family:var(--mono);color:var(--dim)}
 .source-page{color:var(--purple);margin-right:8px}
+
+/* ── Phase 4d: core-recall fall-through banner ───────── */
+.core-fallthrough{margin-top:10px;background:rgba(210,153,34,.08);border:1px solid rgba(210,153,34,.35);border-radius:var(--radius);padding:8px 12px;font-size:12px;color:var(--amber);font-family:var(--mono);display:flex;align-items:flex-start;gap:8px;line-height:1.5}
+.core-fallthrough .ico{flex-shrink:0;font-size:13px}
+
+/* ── Phase 4d: core sources panel (which saves were used) ─── */
+.core-sources{margin-top:10px;display:flex;flex-direction:column;gap:4px}
+.core-source-item{background:var(--surface2);border:1px solid rgba(188,140,255,.3);border-radius:6px;padding:7px 10px;font-size:11px;font-family:var(--mono);color:var(--text);display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.core-source-tag{font-size:9px;padding:1px 5px;border-radius:3px;background:rgba(188,140,255,.15);color:var(--purple);text-transform:uppercase;letter-spacing:.5px}
+.core-source-title{flex:1;min-width:0;color:var(--text)}
+.core-source-meta{color:var(--dim);font-size:10px}
 
 /* loading */
 .loading{display:flex;gap:12px;align-items:flex-start}
@@ -223,8 +238,6 @@ textarea::placeholder{color:var(--dim)}
 .core-modal-close{background:none;border:none;color:var(--dim);font-size:20px;cursor:pointer;line-height:1;padding:2px 6px;border-radius:5px;transition:color .12s}
 .core-modal-close:hover{color:var(--text)}
 .core-modal-body{flex:1;display:flex;overflow:hidden}
-
-/* topics column */
 .core-topics{width:240px;border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;overflow:hidden}
 .core-topics-list{flex:1;overflow-y:auto;padding:10px}
 .core-topic{padding:9px 11px;border-radius:7px;cursor:pointer;display:flex;align-items:center;gap:8px;margin-bottom:3px;transition:background .1s;position:relative}
@@ -245,8 +258,6 @@ textarea::placeholder{color:var(--dim)}
 .core-newtopic-input:focus{border-color:var(--purple)}
 .core-newtopic-btn{background:var(--purple);border:none;color:#000;border-radius:6px;font-size:13px;padding:0 11px;cursor:pointer;font-weight:600;transition:opacity .12s}
 .core-newtopic-btn:hover{opacity:.85}
-
-/* saves column */
 .core-saves{flex:1;display:flex;flex-direction:column;overflow:hidden}
 .core-saves-head{padding:12px 18px;border-bottom:1px solid var(--border);font-size:12px;color:var(--dim);font-family:var(--mono);flex-shrink:0}
 .core-saves-list{flex:1;overflow-y:auto;padding:14px 18px;display:flex;flex-direction:column;gap:10px}
@@ -292,7 +303,6 @@ textarea::placeholder{color:var(--dim)}
 </header>
 
 <div class="layout">
-  <!-- SIDEBAR -->
   <div class="sidebar">
     <div class="sidebar-top">
       <button class="new-chat-btn" onclick="newChat()">＋ New Chat</button>
@@ -303,7 +313,6 @@ textarea::placeholder{color:var(--dim)}
       <div id="sessionItems" style="color:var(--dim);font-size:12px;padding:8px 6px">Loading...</div>
     </div>
 
-    <!-- Uploaded files (Phase 3 Step 5) -->
     <div class="uploads-section empty" id="uploadsSection">
       <div class="session-section-label">Uploaded files</div>
       <div id="uploadsList"></div>
@@ -326,21 +335,24 @@ textarea::placeholder{color:var(--dim)}
       <button class="quick-btn" onclick="sendQuestion('What is our overdue AP balance and what is the IRS penalty for late deposits?')">
         <span class="q-tag tag-both">BOTH</span><br>Overdue + IRS penalty
       </button>
+      <button class="quick-btn" onclick="sendQuestion('What did I save about net income?')">
+        <span class="q-tag tag-core">CORE</span><br>Recall saved net income
+      </button>
     </div>
   </div>
 
-  <!-- CHAT AREA -->
   <div class="chat-area">
     <div class="restore-banner" id="restoreBanner"></div>
     <div class="messages" id="messages">
       <div class="welcome" id="welcome">
         <div class="welcome-icon">🧮</div>
         <h2>CoReckoner</h2>
-        <p>Ask questions about your QuickBooks data or IRS payroll tax regulations. Upload your own CSV or Excel via 📎 to query it the same way. Sessions are saved automatically — pick up any conversation from the sidebar.</p>
+        <p>Ask questions about your QuickBooks data or IRS payroll tax regulations. Upload your own CSV or Excel via 📎 to query it the same way. Sessions are saved automatically — pick up any conversation from the sidebar. Saved answers can be recalled in any future session.</p>
         <div class="chips">
           <span class="chip chip-sql">Text-to-SQL</span>
           <span class="chip chip-rag">RAG / ChromaDB</span>
           <span class="chip chip-both">Hybrid router</span>
+          <span class="chip chip-core">Core recall</span>
         </div>
       </div>
     </div>
@@ -352,18 +364,17 @@ textarea::placeholder{color:var(--dim)}
           <input type="file" id="fileInput" accept=".csv,.xlsx,.xls,.pdf" multiple onchange="handleFileSelected(event)">
         </button>
         <textarea id="questionInput"
-          placeholder="Ask about your accounting data or tax regulations..."
+          placeholder="Ask about your accounting data, tax regulations, or saved core..."
           rows="1"
           onkeydown="handleKey(event)"
           oninput="autoResize(this)"></textarea>
         <button class="send-btn" id="sendBtn" onclick="sendMessage()">➤</button>
       </div>
-      <div class="input-hint">Enter to send · Shift+Enter for new line · 📎 upload CSV/Excel/PDF · 💾 save answers to your core</div>
+      <div class="input-hint">Enter to send · Shift+Enter for new line · 📎 upload CSV/Excel/PDF · 💾 save · 🗄 ask "what did I save about…" to recall</div>
     </div>
   </div>
 </div>
 
-<!-- Toast container -->
 <div class="toast-container" id="toastContainer"></div>
 
 <!-- MY CORE MODAL (Phase 4c) -->
@@ -377,7 +388,6 @@ textarea::placeholder{color:var(--dim)}
       <button class="core-modal-close" onclick="closeCoreModal()" title="Close (Esc)">✕</button>
     </div>
     <div class="core-modal-body">
-      <!-- topics -->
       <div class="core-topics">
         <div class="core-topics-list" id="coreTopicsList"></div>
         <div class="core-topics-foot">
@@ -388,7 +398,6 @@ textarea::placeholder{color:var(--dim)}
           </div>
         </div>
       </div>
-      <!-- saves -->
       <div class="core-saves">
         <div class="core-saves-head" id="coreSavesHead">All saves</div>
         <div class="core-saves-list" id="coreSavesList"></div>
@@ -401,13 +410,11 @@ textarea::placeholder{color:var(--dim)}
 const API = 'http://localhost:8002';
 let isLoading       = false;
 let activeSessionId = null;
-let chartCounter    = 0;   // unique IDs for Plotly divs
+let chartCounter    = 0;
 
-// Core modal state (Phase 4c)
-let coreTopics       = [];          // [{topic_id, name, save_count}]
-let coreSelectedTopic = null;       // null = All, '__none__' = Unsorted, 'top_..' = topic
+let coreTopics       = [];
+let coreSelectedTopic = null;
 
-// Plotly dark layout template
 const PLOTLY_LAYOUT = {
   paper_bgcolor: '#1c2333',
   plot_bgcolor:  '#1c2333',
@@ -420,7 +427,6 @@ const PLOTLY_LAYOUT = {
   legend:        { bgcolor: 'rgba(0,0,0,0)', font: { color: '#8b949e', size: 11 } },
 };
 
-// ── Init ──────────────────────────────────────────────────
 async function init() {
   await checkHealth();
   await loadSessions();
@@ -445,7 +451,6 @@ async function checkHealth() {
   }
 }
 
-// ── Sessions ──────────────────────────────────────────────
 async function loadSessions() {
   try {
     const r = await fetch(`${API}/sessions`);
@@ -498,7 +503,6 @@ function formatDate(iso) {
   } catch { return ''; }
 }
 
-// ── Rename ────────────────────────────────────────────────
 function startRename(e, sessionId) {
   e.stopPropagation();
   const view  = document.getElementById(`title-view-${sessionId}`);
@@ -528,7 +532,7 @@ async function commitRename(sessionId) {
       body:    JSON.stringify({ title: newTitle }),
     });
     view.textContent    = newTitle;
-  } catch { /* silent — revert */ }
+  } catch { /* silent */ }
 
   view.style.display  = '';
   input.style.display = 'none';
@@ -543,7 +547,6 @@ function cancelRename(sessionId) {
   input.style.display = 'none';
 }
 
-// ── New Chat ──────────────────────────────────────────────
 async function newChat() {
   try {
     const r = await fetch(`${API}/sessions`, { method: 'POST' });
@@ -558,7 +561,6 @@ async function newChat() {
   await loadUploads();
 }
 
-// ── Open session ──────────────────────────────────────────
 async function openSession(sessionId) {
   if (sessionId === activeSessionId) return;
   try {
@@ -587,6 +589,9 @@ async function openSession(sessionId) {
           const rexp  = arts.find(a => a.artifact_type === 'route_explanation');
           const chart = arts.find(a => a.artifact_type === 'chart_spec');
           const rtype = arts.find(a => a.artifact_type === 'response_type');
+          // Phase 4d: new artifacts for core recall
+          const csrc  = arts.find(a => a.artifact_type === 'core_sources');
+          const cfall = arts.find(a => a.artifact_type === 'core_fallthrough_note');
 
           appendAIMessage({
             message_id:        msg.message_id,
@@ -600,10 +605,12 @@ async function openSession(sessionId) {
             columns:           sqlR  ? sqlR.content.columns : [],
             sources:           cits  ? cits.content  : [],
             _chart_spec:       chart ? chart.content : null,
+            // Phase 4d
+            core_sources:          csrc  ? csrc.content  : null,
+            core_fallthrough_note: cfall ? cfall.content : null,
           }, msg.timestamp);
         }
       }
-      // After rendering, mark any already-saved messages as filled
       refreshSavedStates();
     } else {
       showBanner('Empty session — start typing to begin.');
@@ -615,7 +622,6 @@ async function openSession(sessionId) {
   await loadUploads();
 }
 
-// ── Delete ────────────────────────────────────────────────
 async function deleteSession(e, sessionId) {
   e.stopPropagation();
   try {
@@ -630,7 +636,6 @@ async function deleteSession(e, sessionId) {
   } catch { /* silent */ }
 }
 
-// ── Uploads (Phase 3 Step 5) ──────────────────────────────
 async function loadUploads() {
   const section = document.getElementById('uploadsSection');
   const list    = document.getElementById('uploadsList');
@@ -696,7 +701,6 @@ function renderUploads(uploads) {
       </div>`;
   }).join('');
 
-  // Mark already-saved uploads as filled
   uploads.forEach(u => markUploadSavedState(u.upload_id));
 }
 
@@ -715,7 +719,6 @@ async function deleteUpload(uploadId, filename) {
   }
 }
 
-// ── File upload ───────────────────────────────────────────
 function triggerFileUpload() {
   if (isLoading) return;
   document.getElementById('fileInput').click();
@@ -724,10 +727,9 @@ function triggerFileUpload() {
 async function handleFileSelected(event) {
   const fileInput = event.target;
   const files     = Array.from(fileInput.files || []);
-  fileInput.value = '';   // clear so the same files can be re-uploaded later
+  fileInput.value = '';
   if (files.length === 0) return;
 
-  // If no active session yet, create one — uploads always belong to a session
   if (!activeSessionId) {
     try {
       const r = await fetch(`${API}/sessions`, { method: 'POST' });
@@ -743,7 +745,6 @@ async function handleFileSelected(event) {
   const attachBtn = document.getElementById('attachBtn');
   attachBtn.disabled = true;
 
-  // Upload one file at a time so each succeeds/fails independently
   for (const file of files) {
     showToast('info', 'Uploading...', file.name);
 
@@ -765,7 +766,6 @@ async function handleFileSelected(event) {
 
       const data = await r.json();
 
-      // Build a friendly success message based on file type
       let successBody;
       if (data.file_type === 'pdf' || data.chunk_count !== undefined) {
         successBody = `${data.page_count || 0} pages · ${data.chunk_count || 0} chunks indexed`;
@@ -793,7 +793,6 @@ async function handleFileSelected(event) {
   await loadUploads();
 }
 
-// ── Core save (Phase 4b-2) ────────────────────────────────
 async function saveMessage(messageId, btn) {
   if (!messageId) {
     showToast('error', 'Cannot save', 'This message has no id yet.');
@@ -854,7 +853,6 @@ async function saveUpload(uploadId, filename) {
   }
 }
 
-// Check a message's saved state and mark its button filled if saved
 async function markMessageSavedState(messageId) {
   if (!messageId) return;
   try {
@@ -885,9 +883,6 @@ async function markUploadSavedState(uploadId) {
   } catch { /* silent */ }
 }
 
-// Re-check saved state for every message button currently on screen.
-// Deferred one animation frame so the full restore render has settled —
-// otherwise per-message lookups could race the DOM and silently miss.
 function refreshSavedStates() {
   requestAnimationFrame(() => {
     document.querySelectorAll('.msg-save-btn[data-message-id]').forEach(btn => {
@@ -918,7 +913,6 @@ function closeCoreModal() {
 }
 
 function coreBackdropClick(e) {
-  // Close only when the backdrop itself (not the modal) is clicked
   if (e.target === document.getElementById('coreBackdrop')) closeCoreModal();
 }
 
@@ -928,9 +922,7 @@ async function loadCoreTopics() {
     const d = await r.json();
     coreTopics = d.topics || [];
     renderCoreTopics(d.unsorted_count ?? 0, d.total_count ?? 0);
-    // Default selection: All, unless a topic is already selected
     selectCoreTopic(coreSelectedTopic ?? null, true);
-    // Update header count too
     const cc = document.getElementById('coreCount');
     if (cc) cc.textContent = d.total_count ?? 0;
   } catch {
@@ -942,17 +934,11 @@ async function loadCoreTopics() {
 function renderCoreTopics(unsortedCount, totalCount) {
   const list = document.getElementById('coreTopicsList');
   let html = '';
-
-  // All
   html += topicRow(null, 'All saves', totalCount, true);
-  // Unsorted
   html += topicRow('__none__', 'Unsorted', unsortedCount, true);
-
-  // User topics
   coreTopics.forEach(t => {
     html += topicRow(t.topic_id, t.name, t.save_count || 0, false);
   });
-
   list.innerHTML = html;
 }
 
@@ -977,13 +963,11 @@ function topicRow(id, name, count, isSpecial) {
 async function selectCoreTopic(topicId, skipReRender) {
   coreSelectedTopic = topicId ?? null;
 
-  // Update active highlight
   document.querySelectorAll('.core-topic').forEach(el => el.classList.remove('active'));
   const key = coreSelectedTopic === null ? 'all' : coreSelectedTopic;
   const el  = document.getElementById(`topic-${key}`);
   if (el) el.classList.add('active');
 
-  // Header label
   const head = document.getElementById('coreSavesHead');
   let label = 'All saves';
   if (coreSelectedTopic === '__none__') label = 'Unsorted';
@@ -1022,7 +1006,6 @@ function renderCoreSaves(saves) {
     return;
   }
 
-  // Build the topic <option> list once (shared across cards)
   const topicOptions = (currentTopicId) => {
     let opts = `<option value="__none__" ${!currentTopicId ? 'selected' : ''}>Unsorted</option>`;
     coreTopics.forEach(t => {
@@ -1115,7 +1098,6 @@ async function deleteCoreTopic(e, topicId, name) {
       return;
     }
     showToast('core', 'Topic deleted', `${name} · saves moved to Unsorted`);
-    // If we were viewing the deleted topic, fall back to All
     if (coreSelectedTopic === topicId) coreSelectedTopic = null;
     await loadCoreTopics();
   } catch (e2) {
@@ -1139,7 +1121,6 @@ async function moveSaveToTopic(saveId, topicValue) {
       return;
     }
     showToast('core', 'Save moved', topicValue === '__none__' ? 'Unsorted' : 'topic updated');
-    // Refresh topics (counts changed) and current view
     await loadCoreTopics();
   } catch (e) {
     showToast('error', 'Move failed', e.message || 'Network error');
@@ -1156,17 +1137,15 @@ async function archiveCoreSave(saveId) {
       return;
     }
     showToast('core', 'Removed from core', '');
-    // Remove the card immediately, then refresh counts
     const card = document.getElementById(`savecard-${saveId}`);
     if (card) card.remove();
     await loadCoreTopics();
-    refreshSavedStates();   // un-fill any on-screen message button if applicable
+    refreshSavedStates();
   } catch (e) {
     showToast('error', 'Archive failed', e.message || 'Network error');
   }
 }
 
-// ── Toast ─────────────────────────────────────────────────
 function showToast(kind, title, body) {
   const container = document.getElementById('toastContainer');
   const toast = document.createElement('div');
@@ -1190,7 +1169,6 @@ function dismissToast(toast) {
   setTimeout(() => toast.remove(), 300);
 }
 
-// ── Send message ──────────────────────────────────────────
 async function sendMessage() {
   const input    = document.getElementById('questionInput');
   const question = input.value.trim();
@@ -1242,7 +1220,6 @@ function sendQuestion(q) {
   sendMessage();
 }
 
-// ── Plotly chart rendering ────────────────────────────────
 function renderChart(chartType, columns, rows, question) {
   if (!rows || !rows.length || !columns || !columns.length) return null;
 
@@ -1336,7 +1313,6 @@ function renderChart(chartType, columns, rows, question) {
   return wrap;
 }
 
-// ── DOM helpers ───────────────────────────────────────────
 function hideWelcome() {
   const w = document.getElementById('welcome');
   if (w) w.remove();
@@ -1346,11 +1322,12 @@ function clearMessages() {
     `<div class="welcome" id="welcome">
       <div class="welcome-icon">🧮</div>
       <h2>CoReckoner</h2>
-      <p>Ask questions about your QuickBooks data or IRS payroll tax regulations. Upload your own CSV or Excel via 📎 to query it the same way.</p>
+      <p>Ask questions about your QuickBooks data or IRS payroll tax regulations. Upload your own CSV or Excel via 📎 to query it the same way. Saved answers can be recalled in any future session.</p>
       <div class="chips">
         <span class="chip chip-sql">Text-to-SQL</span>
         <span class="chip chip-rag">RAG / ChromaDB</span>
         <span class="chip chip-both">Hybrid router</span>
+        <span class="chip chip-core">Core recall</span>
       </div>
     </div>`;
 }
@@ -1400,12 +1377,29 @@ function appendAIMessage(data, ts) {
   const chartHint    = data.chart_hint || 'none';
   const messageId    = data.message_id || '';
 
+  // Phase 4d: pipeline may be "core_recall" or "core_recall→sql" / "core_recall→rag"
+  // The badge picks the leading source: CORE if pure recall, otherwise the
+  // downstream pipeline (with a small CORE-tried indicator if fall-through happened).
+  let badgeClass, badgeLabel;
+  if (pipeline === 'core_recall') {
+    badgeClass = 'badge-core';
+    badgeLabel = 'CORE';
+  } else if (pipeline.startsWith('core_recall→')) {
+    const downstream = pipeline.split('→')[1] || 'sql';
+    badgeClass = `badge-${downstream}`;
+    badgeLabel = downstream.toUpperCase();
+  } else {
+    badgeClass = `badge-${pipeline}`;
+    badgeLabel = pipeline.toUpperCase();
+  }
+
   const rtLabels = {
     answer:        '',
     no_data:       'No data',
     sql_error:     'SQL error',
     rag_not_found: 'Not found in docs',
     system_error:  'System error',
+    core_not_found: 'No recall match',
   };
   const rtLabel  = rtLabels[responseType] || '';
   const rtBadge  = rtLabel
@@ -1414,7 +1408,6 @@ function appendAIMessage(data, ts) {
   const routeHint = data.route_explanation
     ? `<span class="route-hint">${escHtml(data.route_explanation)}</span>` : '';
 
-  // Save button — only when we have a message_id to save against
   const saveBtn = messageId
     ? `<button class="msg-save-btn" id="msgsave-${messageId}" data-message-id="${messageId}"
                onclick="saveMessage('${messageId}', this)" title="Save this answer to your core">
@@ -1430,7 +1423,7 @@ function appendAIMessage(data, ts) {
       <div class="msg-meta">
         <span class="msg-name">CoReckoner</span>
         <span class="msg-time">${time}</span>
-        <span class="pipeline-badge badge-${pipeline}">${pipeline.toUpperCase()}</span>
+        <span class="pipeline-badge ${badgeClass}">${badgeLabel}</span>
         ${rtBadge}
         ${routeHint}
         ${saveBtn}
@@ -1439,6 +1432,32 @@ function appendAIMessage(data, ts) {
     </div>`;
 
   const body = msgEl.querySelector('.msg-body');
+
+  // ── Phase 4d: fall-through banner (recall tried, found nothing) ──
+  if (data.core_fallthrough_note) {
+    const noteEl = document.createElement('div');
+    noteEl.className = 'core-fallthrough';
+    noteEl.innerHTML = `<span class="ico">🗄</span><span>${escHtml(data.core_fallthrough_note)}</span>`;
+    body.appendChild(noteEl);
+  }
+
+  // ── Phase 4d: core sources panel (which saves were used) ──
+  if (data.core_sources && data.core_sources.length > 0) {
+    const wrap = document.createElement('div');
+    wrap.className = 'core-sources';
+    data.core_sources.forEach(s => {
+      const item = document.createElement('div');
+      item.className = 'core-source-item';
+      const score = typeof s.score === 'number' ? `relevance ${s.score.toFixed(2)}` : '';
+      item.innerHTML = `
+        <span class="core-source-tag">${escHtml(s.kind || 'message')}</span>
+        <span class="core-source-title">${escHtml(s.title || '(untitled)')}</span>
+        <span class="core-source-meta">${escHtml(s.date || '')} · ${escHtml(score)}</span>
+      `;
+      wrap.appendChild(item);
+    });
+    body.appendChild(wrap);
+  }
 
   // SQL result table
   if (data.sql && data.raw_data && data.raw_data.length > 0) {
@@ -1474,7 +1493,7 @@ function appendAIMessage(data, ts) {
     }
   }
 
-  // Citations
+  // Citations (RAG sources panel)
   if (data.sources && data.sources.length > 0) {
     let srcs = '<div class="sources">';
     data.sources.forEach(s => {
@@ -1487,11 +1506,6 @@ function appendAIMessage(data, ts) {
   }
 
   document.getElementById('messages').appendChild(msgEl);
-
-  // NOTE: saved-state marking is handled by the caller after all messages
-  // are in the DOM (see openSession → refreshSavedStates, and sendMessage),
-  // so we do NOT fire a per-message async check here — that raced against
-  // rendering and silently missed, leaving buttons un-filled on reopen.
 }
 
 function appendError(msg) {
@@ -1508,7 +1522,6 @@ function appendError(msg) {
   document.getElementById('messages').appendChild(el);
 }
 
-// ── Utils ─────────────────────────────────────────────────
 function setLoading(v) {
   isLoading = v;
   document.getElementById('sendBtn').disabled = v;
@@ -1530,7 +1543,6 @@ function escHtml(s) {
     .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-// Global Esc handler — close the core modal if open
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     const bd = document.getElementById('coreBackdrop');

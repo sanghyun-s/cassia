@@ -1,36 +1,33 @@
 """
 =============================================================
-QUERY ROUTER — Classify: RAG vs Text-to-SQL
+QUERY ROUTER — Classify: SQL / RAG / BOTH / CORE_RECALL
 =============================================================
 
 The brain of the hybrid system. Every user question passes
 through here first. The router decides:
 
-  → SQL   for structured/numeric questions
-          "How much do we owe Oracle?"
-          "What's AP aging over 60 days?"
-          "Total revenue Jan–Mar 2026?"
-
-  → RAG   for document/policy questions
-          "What's the withholding rule for bonuses?"
-          "How should we handle W-4 exempt claims?"
-          "What does Publication 15 say about tips?"
-
-  → BOTH  for hybrid questions
-          "What's our overdue balance and what's the IRS
-           late payment penalty?"
+  → SQL          structured/numeric questions
+  → RAG          policy / document questions
+  → BOTH         hybrid (numbers + policy)
+  → CORE_RECALL  pulls from the user's saved "core" knowledge base
+                 (Phase 4d — works even in a brand-new session)
 
 Two strategies available:
   1. LLM-based   (more accurate, costs ~$0.001 per route)
   2. Keyword     (free, instant, less accurate — fallback)
 
 Phase 4 warm-up:
-  - classify_question() now accepts session_id. If the session has
-    uploaded PDFs, the LLM router is told about them and biased toward
-    RAG/BOTH for questions that could target those documents — even when
-    the question mentions numbers/totals. Fixes the case where
-    "What were Apple's total net sales?" routed to SQL despite an
-    uploaded 10-K.
+  - classify_question() accepts session_id so the LLM knows about
+    uploaded PDFs (biases toward RAG/BOTH).
+
+Phase 4d:
+  - Added CORE_RECALL as a fourth route.
+  - Trigger-phrase detection runs BEFORE the LLM: explicit phrases like
+    "what did I save", "from my core", "recall my…" force core_recall
+    deterministically (no LLM call for these).
+  - For non-trigger questions, the LLM is told core_recall exists and may
+    pick it. main.py wraps the pipeline with a fall-through safety net,
+    so a wrong core_recall guess still produces a useful answer.
 """
 
 import os
@@ -47,6 +44,7 @@ class RouteDecision(str, Enum):
     SQL = "sql"
     RAG = "rag"
     BOTH = "both"
+    CORE_RECALL = "core_recall"   # Phase 4d
 
 
 # ── Keywords for fast fallback routing ────────────────────
@@ -68,12 +66,33 @@ RAG_KEYWORDS = [
     "deposit schedule", "penalty", "compliance", "filing",
 ]
 
+# ── Phase 4d: explicit triggers that force core_recall ────
+# Conservative on purpose. Each pattern is a phrase a user would only
+# plausibly type if they actually mean to query their saved core.
+CORE_RECALL_TRIGGERS = [
+    r"\bwhat did i save\b",
+    r"\bwhat have i saved\b",
+    r"\bfrom my (core|saves?|saved|notes?|knowledge base)\b",
+    r"\bin my (core|saves?|saved|notes?|knowledge base)\b",
+    r"\b(recall|pull up|pull|find|look up) (my|the) saved\b",
+    r"\bsaved (answer|answers|item|items|notes?|data)\b",
+    r"\b(my|the) (saved|core) (answer|answers|notes?|data|content)\b",
+    r"\bdid i save (anything|something)\b",
+    r"\bcheck my (core|saves?|saved|knowledge base)\b",
+]
+_CORE_RECALL_PATTERN = re.compile("|".join(CORE_RECALL_TRIGGERS), re.IGNORECASE)
+
+
+def _matches_core_recall_trigger(question: str) -> bool:
+    """Deterministic trigger detection — runs before any LLM call."""
+    return bool(_CORE_RECALL_PATTERN.search(question or ""))
+
 
 # ── Prompt for LLM-based routing ──────────────────────────
 ROUTER_PROMPT = PromptTemplate(
     template="""You are a query classifier for an accounting AI chatbot.
 
-The chatbot has two data sources:
+The chatbot has THREE knowledge sources:
 1. SQL DATABASE — structured accounting data:
    - accounts_payable, accounts_receivable, revenue, general_ledger
    - balance_sheet, profit_loss, chart_of_accounts (7 tables total)
@@ -82,10 +101,19 @@ The chatbot has two data sources:
    - IRS Pub 15, Pub 15-T (withholding methods), Pub 15-B (fringe benefits)
    - PLUS any PDF documents the user has uploaded to this session
 
+3. CORE — the user's personal saved knowledge base. The user has previously
+   committed specific answers or uploads to their "core" via a Save button.
+   These persist across sessions. Pick CORE_RECALL when the user is clearly
+   asking about something they saved before — phrases like "what did I
+   save", "from my notes", "the answer I saved about X", "recall my…".
+   For NORMAL questions about live data or live documents, do NOT pick
+   core_recall — they should go to sql / rag / both as usual.
+
 {history_block}{uploads_block}Classify the question below into exactly one of:
-- "sql"  → needs exact numbers from the database
-- "rag"  → needs explanation from policy documents OR uploaded PDFs
-- "both" → needs data AND policy/document context
+- "sql"           → needs exact numbers from the database
+- "rag"           → needs explanation from policy documents OR uploaded PDFs
+- "both"          → needs data AND policy/document context
+- "core_recall"   → user is explicitly asking about their previously-saved content
 
 If the question is a follow-up that refers to prior turns (e.g. "those",
 "the first one", "그 중에서", "show me top 3"), classify based on what the
@@ -93,7 +121,7 @@ prior turn was about. A follow-up to a SQL result is still "sql".
 
 Question: {question}
 
-Reply with ONLY one word: sql, rag, or both""",
+Reply with ONLY one word: sql, rag, both, or core_recall""",
     input_variables=["question", "history_block", "uploads_block"],
 )
 
@@ -115,6 +143,8 @@ def route_with_keywords(question: str) -> RouteDecision:
     """
     Fast keyword-based routing — no API call needed.
     Used as fallback if LLM routing fails.
+    Note: trigger-based core_recall detection happens upstream in
+    classify_question(), not here.
     """
     q = question.lower()
 
@@ -137,13 +167,6 @@ def route_with_llm(question: str, llm: ChatOpenAI, history: str = "",
     """
     LLM-based routing — more accurate, understands context.
     Primary routing strategy.
-
-    If `history` is non-empty, it's injected into the prompt so the
-    classifier can resolve follow-up references like "those" or "the top 3".
-
-    If `pdf_filenames` is non-empty, the classifier is told this session
-    has uploaded PDFs and should prefer RAG/BOTH for questions that could
-    be about those documents, even if they mention numbers.
     """
     history_block = ""
     if history:
@@ -167,8 +190,11 @@ def route_with_llm(question: str, llm: ChatOpenAI, history: str = "",
     response = llm.invoke(prompt)
     decision = response.content.strip().lower()
 
-    # Parse response — handle any LLM verbosity
-    if "both" in decision:
+    # Parse response — handle any LLM verbosity. Order matters: check
+    # core_recall before "rag" so "core_recall" doesn't get partial-matched.
+    if "core_recall" in decision or "core recall" in decision:
+        return RouteDecision.CORE_RECALL
+    elif "both" in decision:
         return RouteDecision.BOTH
     elif "rag" in decision:
         return RouteDecision.RAG
@@ -185,14 +211,27 @@ def classify_question(question: str, llm: ChatOpenAI = None, history: str = "",
     Main routing function called by FastAPI.
     Returns route decision + explanation for transparency.
 
+    Phase 4d routing order:
+      1. Explicit trigger phrases → core_recall (deterministic, no LLM call).
+      2. Otherwise, LLM picks among sql / rag / both / core_recall (with the
+         session's uploaded PDFs as context).
+      3. If LLM unavailable → keyword fallback (sql / rag / both only).
+
     Args:
         question:   The user's current question
         llm:        ChatOpenAI instance (if None, falls back to keyword routing)
         history:    Formatted prior conversation context (last N turns).
-                    Empty string for first turn or when memory is disabled.
         session_id: Current session — used to detect uploaded PDFs and bias
                     routing toward RAG when the question may target them.
     """
+    # Step 1: trigger phrases — deterministic, takes precedence
+    if _matches_core_recall_trigger(question):
+        return {
+            "route": RouteDecision.CORE_RECALL,
+            "method": "trigger",
+            "explanation": "Question explicitly references your saved core.",
+        }
+
     pdf_filenames = _get_session_pdf_filenames(session_id)
 
     if llm:
@@ -207,6 +246,7 @@ def classify_question(question: str, llm: ChatOpenAI = None, history: str = "",
         RouteDecision.SQL: "Question asks for specific numbers, amounts, or data from accounting records.",
         RouteDecision.RAG: "Question asks about policies, regulations, or document content.",
         RouteDecision.BOTH: "Question requires both financial data and policy context.",
+        RouteDecision.CORE_RECALL: "Question seems to ask about previously-saved core content.",
     }
 
     return {

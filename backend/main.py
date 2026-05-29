@@ -1,31 +1,26 @@
 """
 =============================================================
-CoReckoner — FastAPI Backend  (Phase 4c)
+CoReckoner — FastAPI Backend  (Phase 4d)
 =============================================================
 
-Phase 3 C3:
-  - run_rag_pipeline() receives session_id so user PDFs are searchable
-  - DELETE /sessions/{id} cascade also removes ChromaDB vectors
+Phase 4d (natural-language recall):
+  - Router learns a 4th route: 'core_recall' (triggers + LLM + fall-through)
+  - new pipelines/core_recall_pipeline.py does cosine similarity over saves
+  - new pipelines/core_embed.py provides embed_text + cosine_similarity
+  - core_saves are embedded at save time (call into core_embed in /core/save)
+  - When core_recall returns no match, /chat falls through to the normal
+    pipeline AND surfaces a visible "no recall match" banner via a new
+    artifact `core_fallthrough_note`.
 
-Phase 4 warm-up:
-  - classify_question() receives session_id (router PDF-aware)
-
-Phase 4a:
-  - ensure_default_user() on startup; /stats reports core counts
-
-Phase 4b-2 (save button):
-  - ChatResponse carries message_id
-  - POST /core/save, GET /core/saves (filled-button state)
-
-Phase 4c (topics + My Core Data):
-  - GET/POST/PATCH/DELETE /core/topics — topic CRUD
-  - GET  /core/saves/list  — browse saves (optionally by topic)
-  - PATCH /core/saves/{id} — move a save to a topic / set note
-  - DELETE /core/saves/{id} — archive (soft-delete) a save
-  All wrap the CRUD built in 4a, scoped to the single default user.
+ChatResponse gains:
+  core_recall_attempted : bool   — true when the question was routed to core
+  core_recall_matched   : bool   — true when it actually returned results
+  core_fallthrough_note : str    — set when matched=False so the UI can show it
+  core_sources          : list   — when matched=True, the saves cited (title+date)
 """
 
 import os
+import json
 import sqlite3
 from pathlib import Path
 from datetime import datetime
@@ -45,6 +40,8 @@ from routers.query_router import classify_question
 from routers.upload_router import router as upload_router
 from pipelines.sql_pipeline import run_sql_pipeline, get_db_connection, get_schema
 from pipelines.rag_pipeline import run_rag_pipeline
+from pipelines.core_recall_pipeline import run_core_recall_pipeline
+from pipelines.core_embed import embed_text
 
 from db.session_store import (
     init_db,
@@ -77,6 +74,9 @@ from db.session_store import (
     list_saves,
     update_save_topic,
     archive_save,
+    # Phase 4d
+    update_save_embedding,
+    list_saves_needing_embedding,
 )
 from uploads.session_db import delete_session_db
 from uploads.document   import delete_session_vectors
@@ -97,7 +97,7 @@ async def lifespan(app: FastAPI):
     global CURRENT_USER_ID
     print("\n" + "═" * 52)
     print("  CoReckoner — Accounting AI Chatbot")
-    print("  Phase 4c: topics + My Core Data")
+    print("  Phase 4d: natural-language core recall")
     print("═" * 52)
     try:
         init_db()
@@ -118,6 +118,17 @@ async def lifespan(app: FastAPI):
 
     print(f"  {'✓' if DB_PATH.exists() else '⚠'} accounting.db  {'found' if DB_PATH.exists() else 'NOT found'}")
     print(f"  {'✓' if CHROMA_DIR.exists() else '⚠'} chroma_db     {'found' if CHROMA_DIR.exists() else 'NOT found'}")
+
+    # Phase 4d: warn if any saves still lack embeddings (the backfill script
+    # should be run once after upgrading to v2.9.0).
+    try:
+        unembedded = list_saves_needing_embedding(CURRENT_USER_ID)
+        if unembedded:
+            print(f"  ⚠ {len(unembedded)} core save(s) missing embeddings — "
+                  f"run: python3 backend/scripts/backfill_save_embeddings.py")
+    except Exception as e:
+        print(f"  ⚠ embedding-check failed: {e}")
+
     print("═" * 52)
     print("  Chat UI:  http://localhost:8002")
     print("  API docs: http://localhost:8002/docs")
@@ -128,8 +139,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="CoReckoner — Accounting AI Chatbot",
-    description="Hybrid RAG + Text-to-SQL with persistent sessions, CSV/Excel/PDF uploads",
-    version="2.8.0",
+    description="Hybrid RAG + Text-to-SQL with persistent sessions, uploads, and core recall",
+    version="2.9.0",
     lifespan=lifespan,
 )
 
@@ -156,7 +167,7 @@ class ChatRequest(BaseModel):
 
 class ChatResponse(BaseModel):
     session_id:        str
-    message_id:        Optional[str] = None   # Phase 4b-2: assistant message id
+    message_id:        Optional[str] = None
     question:          str
     answer:            str
     pipeline:          str
@@ -167,6 +178,11 @@ class ChatResponse(BaseModel):
     raw_data:          Optional[list] = None
     columns:           Optional[list] = None
     sources:           Optional[list] = None
+    # Phase 4d additions:
+    core_recall_attempted: bool          = False
+    core_recall_matched:   bool          = False
+    core_fallthrough_note: Optional[str] = None
+    core_sources:          Optional[list] = None
     timestamp:         str
 
 
@@ -175,8 +191,8 @@ class SessionRenameRequest(BaseModel):
 
 
 class CoreSaveRequest(BaseModel):
-    kind:      str                      # 'message' | 'upload'
-    source_id: str                      # message_id or upload_id
+    kind:      str
+    source_id: str
     note:      Optional[str] = None
 
 
@@ -189,13 +205,9 @@ class TopicRenameRequest(BaseModel):
 
 
 class SaveUpdateRequest(BaseModel):
-    # topic_id semantics:
-    #   omitted (None + not provided) → leave topic unchanged
-    #   ""  or "__none__"             → move to Unsorted (NULL)
-    #   "top_..."                     → move to that topic
     topic_id: Optional[str] = None
     note:     Optional[str] = None
-    clear_topic: bool = False           # explicit "move to Unsorted"
+    clear_topic: bool = False
 
 
 def get_llm() -> ChatOpenAI:
@@ -227,6 +239,21 @@ def _try_touch(session_id) -> None:
         touch_session(session_id)
     except Exception:
         pass
+
+
+def _try_embed_save(save_id: str, text: str) -> None:
+    """
+    Phase 4d: embed a save and cache its vector. Best-effort — a failure
+    here doesn't block the save itself; the backfill script can fill later.
+    """
+    if not save_id or not text:
+        return
+    try:
+        vec  = embed_text(text)
+        vstr = json.dumps(vec)
+        update_save_embedding(save_id, vstr)
+    except Exception as e:
+        print(f"[main] embed-on-save failed for {save_id}: {e}")
 
 
 # ── CHAT ENDPOINT ──────────────────────────────────────────
@@ -271,12 +298,56 @@ async def chat(request: ChatRequest):
 
     sql_result    = {}
     rag_result    = {}
+    core_result   = {}
     final_answer  = ""
     pipeline_used = route
     response_type = "answer"
     chart_hint    = "none"
 
+    # Phase 4d state — surfaced in ChatResponse
+    core_attempted = False
+    core_matched   = False
+    core_fallnote  = None
+    core_sources   = None
+
     try:
+        # ── Phase 4d: try core_recall first if routed there ──
+        if route == "core_recall":
+            core_attempted = True
+            core_result    = run_core_recall_pipeline(
+                question, llm, user_id=CURRENT_USER_ID
+            )
+
+            if core_result.get("matched"):
+                core_matched  = True
+                final_answer  = core_result.get("answer", "")
+                core_sources  = core_result.get("sources", [])
+                pipeline_used = "core_recall"
+                response_type = core_result.get("response_type", "answer")
+            else:
+                # Fall through to normal classification (sql/rag/both).
+                # Reclassify WITHOUT the trigger, by asking the LLM directly.
+                # Keep core_fallnote so the UI can surface it.
+                core_fallnote = core_result.get("answer") or (
+                    "Nothing in your saved core matched this — answering live instead."
+                )
+                # Re-route via LLM (skip trigger detection by going direct).
+                from routers.query_router import route_with_llm
+                pdf_filenames = []
+                try:
+                    from db.session_store import list_uploads
+                    pdf_filenames = [u["filename"] for u in list_uploads(session_id)
+                                     if u.get("target") == "rag"]
+                except Exception:
+                    pass
+                fallback_route = route_with_llm(question, llm, pdf_filenames=pdf_filenames)
+                # Demote fallback's own core_recall result to sql to avoid loop
+                if fallback_route == "core_recall":
+                    fallback_route = "sql"
+                route = fallback_route.value if hasattr(fallback_route, "value") else fallback_route
+                pipeline_used = f"core_recall→{route}"
+
+        # ── Standard pipelines (also runs when fall-through reassigned route) ──
         if route in ("sql", "both"):
             sql_result = run_sql_pipeline(question, llm, DB_PATH, session_id=session_id)
             response_type = sql_result.get("response_type", "answer")
@@ -289,21 +360,23 @@ async def chat(request: ChatRequest):
             if route == "rag":
                 response_type = rag_result.get("response_type", "answer")
 
-        if route == "both":
-            sql_ans = sql_result.get("answer", "")
-            rag_ans = rag_result.get("answer", "")
-            merge   = llm.invoke(
-                f"Combine these two answers into one clear response:\n\n"
-                f"DATA ANSWER: {sql_ans}\n"
-                f"POLICY ANSWER: {rag_ans}\n\n"
-                f"Write a unified 3-5 sentence answer addressing both numbers and policy context."
-            )
-            final_answer  = merge.content.strip()
-            response_type = "answer"
-        elif route == "sql":
-            final_answer = sql_result.get("answer", "No answer generated.")
-        else:
-            final_answer = rag_result.get("answer", "No answer generated.")
+        # Compose final_answer if we didn't already (i.e. not core_matched)
+        if not core_matched:
+            if route == "both":
+                sql_ans = sql_result.get("answer", "")
+                rag_ans = rag_result.get("answer", "")
+                merge   = llm.invoke(
+                    f"Combine these two answers into one clear response:\n\n"
+                    f"DATA ANSWER: {sql_ans}\n"
+                    f"POLICY ANSWER: {rag_ans}\n\n"
+                    f"Write a unified 3-5 sentence answer addressing both numbers and policy context."
+                )
+                final_answer  = merge.content.strip()
+                response_type = "answer"
+            elif route == "sql":
+                final_answer = sql_result.get("answer", "No answer generated.")
+            elif route == "rag":
+                final_answer = rag_result.get("answer", "No answer generated.")
 
     except FileNotFoundError as e:
         raise HTTPException(status_code=503, detail=str(e))
@@ -333,6 +406,11 @@ async def chat(request: ChatRequest):
                 "rows":       sql_result.get("raw_data", []),
                 "question":   question,
             })
+        # Phase 4d artifacts (so restored sessions still show recall context)
+        if core_sources:
+            _try_save_artifact(asst_msg_id, "core_sources", core_sources)
+        if core_fallnote:
+            _try_save_artifact(asst_msg_id, "core_fallthrough_note", core_fallnote)
 
     _try_touch(session_id)
 
@@ -349,6 +427,10 @@ async def chat(request: ChatRequest):
         raw_data          = sql_result.get("raw_data", []),
         columns           = sql_result.get("columns", []),
         sources           = rag_result.get("sources", []),
+        core_recall_attempted = core_attempted,
+        core_recall_matched   = core_matched,
+        core_fallthrough_note = core_fallnote,
+        core_sources          = core_sources,
         timestamp         = timestamp,
     )
 
@@ -402,14 +484,8 @@ async def rename_session(session_id: str, body: SessionRenameRequest):
 @app.delete("/sessions/{session_id}")
 async def remove_session(session_id: str):
     """
-    Delete a session and cascade cleanup across three layers:
-      1. coreckoner.db rows (sessions + messages + artifacts + uploads — via FK)
-      2. Per-session SQLite DB at outputs/sessions/{id}.db
-      3. Per-session ChromaDB vectors in 'user_uploads' collection (C3)
-
-    NOTE (Phase 4b): core_saves are intentionally NOT deleted here — saved
-    items outlive the session they came from (decoupled storage). Their
-    source_session_id may dangle, which is fine.
+    Delete a session and cascade cleanup. core_saves are intentionally
+    preserved (see Phase 4b decision).
     """
     try:
         deleted = delete_session(session_id)
@@ -418,13 +494,11 @@ async def remove_session(session_id: str):
     if not deleted:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    # Cascade 1: per-session SQLite DB
     try:
         delete_session_db(session_id)
     except Exception as e:
         print(f"[main] cascade: delete_session_db failed for {session_id}: {e}")
 
-    # Cascade 2: per-session ChromaDB vectors
     try:
         n_deleted = delete_session_vectors(session_id)
         if n_deleted:
@@ -438,12 +512,8 @@ async def remove_session(session_id: str):
 # ── CORE SAVE ENDPOINTS (Phase 4b-2) ───────────────────────
 
 def _build_message_snapshot(message_id: str) -> dict:
-    """
-    Assemble a rich, immutable snapshot of an assistant message:
-    full text + its artifacts (sql, result, citations, chart, route).
-    Returns {title, content, metadata, source_session_id} or raises 404.
-    """
-    from db.session_store import _get_conn  # local import; internal helper
+    """Snapshot an assistant message: text + artifacts → core save payload."""
+    from db.session_store import _get_conn
     conn = _get_conn()
     try:
         row = conn.execute(
@@ -475,16 +545,13 @@ def _build_message_snapshot(message_id: str) -> dict:
 
 
 def _build_upload_snapshot(upload_id: str) -> dict:
-    """
-    Assemble a snapshot of an upload from the summary captured at ingest
-    (Phase 4b-1). Returns {title, content, metadata, source_session_id}.
-    """
+    """Snapshot an upload from its 4b-1 summary."""
     up = get_upload(upload_id)
     if not up:
         raise HTTPException(status_code=404, detail=f"Upload {upload_id} not found")
 
     filename = up.get("filename", "(file)")
-    summary  = up.get("summary")  # dict captured at ingest, or None
+    summary  = up.get("summary")
 
     lines = [f"Uploaded file: {filename}"]
     if summary and summary.get("kind") == "tabular":
@@ -518,9 +585,8 @@ def _build_upload_snapshot(upload_id: str) -> dict:
 @app.post("/core/save")
 async def core_save(body: CoreSaveRequest):
     """
-    Save a message or upload to the current user's core.
-    No topic at save time — goes to the default unsorted bucket (4c organises).
-    Idempotent: saving the same source twice returns the existing save.
+    Save a message or upload. Phase 4d: also embed the content immediately
+    so recall finds it without a separate backfill step.
     """
     kind = (body.kind or "").strip()
     if kind not in ("message", "upload"):
@@ -559,6 +625,12 @@ async def core_save(body: CoreSaveRequest):
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Save failed: {e}")
 
+    # Phase 4d: embed-on-save. Best-effort. Skip if this save already had an
+    # embedding (idempotent re-save).
+    existing = get_save(save_id)
+    if existing and not existing.get("embedding_json"):
+        _try_embed_save(save_id, snap["content"])
+
     saved = get_save(save_id)
     return {
         "status":  "saved",
@@ -571,10 +643,7 @@ async def core_save(body: CoreSaveRequest):
 @app.get("/core/saves")
 async def core_saves(source_message_id: Optional[str] = None,
                      source_upload_id:  Optional[str] = None):
-    """
-    Look up an active save by its source (for filled-button state).
-    Returns {saved: bool, save_id: str|None}.
-    """
+    """Look up an active save by its source (for filled-button state)."""
     if not source_message_id and not source_upload_id:
         raise HTTPException(
             status_code=400,
@@ -595,10 +664,6 @@ async def core_saves(source_message_id: Optional[str] = None,
 
 @app.get("/core/topics")
 async def core_list_topics():
-    """
-    List all topics for the current user (each with a save_count), plus an
-    'unsorted' count for saves that have no topic.
-    """
     try:
         topics = list_topics(CURRENT_USER_ID)
     except Exception as e:
@@ -624,7 +689,6 @@ async def core_list_topics():
 
 @app.post("/core/topics")
 async def core_create_topic(body: TopicCreateRequest):
-    """Create a topic (idempotent on name). Returns the topic id."""
     name = (body.name or "").strip()
     if not name:
         raise HTTPException(status_code=400, detail="Topic name cannot be empty")
@@ -637,7 +701,6 @@ async def core_create_topic(body: TopicCreateRequest):
 
 @app.patch("/core/topics/{topic_id}")
 async def core_rename_topic(topic_id: str, body: TopicRenameRequest):
-    """Rename a topic."""
     name = (body.name or "").strip()
     if not name:
         raise HTTPException(status_code=400, detail="Topic name cannot be empty")
@@ -652,10 +715,6 @@ async def core_rename_topic(topic_id: str, body: TopicRenameRequest):
 
 @app.delete("/core/topics/{topic_id}")
 async def core_delete_topic(topic_id: str):
-    """
-    Delete a topic. Saves are NOT deleted — they fall back to Unsorted
-    (topic_id set to NULL via ON DELETE SET NULL).
-    """
     try:
         ok = delete_topic(topic_id)
     except Exception as e:
@@ -667,12 +726,6 @@ async def core_delete_topic(topic_id: str):
 
 @app.get("/core/saves/list")
 async def core_saves_list(topic_id: Optional[str] = None):
-    """
-    Browse saves for the current user.
-      - topic_id omitted     → all active saves
-      - topic_id='__none__'  → only Unsorted (no topic)
-      - topic_id='top_...'   → only that topic
-    """
     try:
         saves = list_saves(CURRENT_USER_ID, topic_id=topic_id)
     except Exception as e:
@@ -682,17 +735,10 @@ async def core_saves_list(topic_id: Optional[str] = None):
 
 @app.patch("/core/saves/{save_id}")
 async def core_update_save(save_id: str, body: SaveUpdateRequest):
-    """
-    Move a save to a topic and/or update its note.
-      - clear_topic=true OR topic_id in ('', '__none__') → move to Unsorted
-      - topic_id='top_...'                               → move to that topic
-      - note provided                                    → update note
-    """
     existing = get_save(save_id)
     if not existing:
         raise HTTPException(status_code=404, detail="Save not found")
 
-    # Resolve the target topic_id
     target_topic = existing.get("topic_id")
     if body.clear_topic or body.topic_id in ("", "__none__"):
         target_topic = None
@@ -709,7 +755,6 @@ async def core_update_save(save_id: str, body: SaveUpdateRequest):
 
 @app.delete("/core/saves/{save_id}")
 async def core_archive_save(save_id: str):
-    """Archive (soft-delete) a save. Recoverable in the DB; hidden from lists."""
     existing = get_save(save_id)
     if not existing:
         raise HTTPException(status_code=404, detail="Save not found")
@@ -763,13 +808,18 @@ async def get_stats():
     except Exception:
         stats["session_count"] = 0
 
-    # Phase 4a counts
     try:
         stats["user_count"]  = count_users()
         stats["topic_count"] = count_topics()
         stats["save_count"]  = count_saves()
     except Exception as e:
         print(f"[main] stats core counts failed: {e}")
+
+    # Phase 4d: surface how many saves still need embedding
+    try:
+        stats["saves_needing_embedding"] = len(list_saves_needing_embedding(CURRENT_USER_ID))
+    except Exception:
+        pass
 
     return stats
 

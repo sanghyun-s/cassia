@@ -20,6 +20,13 @@ Phase 4b-1:
     preview text for PDFs) captured at ingest time so core-saves can be rich.
   - An idempotent ALTER guard adds the column to pre-existing databases.
 
+Phase 4d:
+  - update_save_embedding(save_id, embedding_json) writes the cached vector.
+  - list_saves_needing_embedding(user_id) finds saves with no embedding yet
+    (used by the one-time backfill script).
+  - The embedding_json column itself was provisioned back in 4a, so no
+    schema change here.
+
 Usage:
   from db.session_store import (
       init_db, create_session, get_all_sessions,
@@ -30,6 +37,7 @@ Usage:
       create_topic, list_topics, rename_topic, delete_topic,
       create_save, list_saves, get_save, update_save_topic, archive_save,
       count_users, count_topics, count_saves,
+      update_save_embedding, list_saves_needing_embedding,   # 4d
   )
 """
 
@@ -157,7 +165,7 @@ def init_db() -> None:
                 content           TEXT,
                 metadata_json     TEXT,
                 note              TEXT,
-                embedding_json    TEXT,     -- cached embedding for 4d recall (empty until 4d)
+                embedding_json    TEXT,     -- cached embedding for 4d recall
                 created_at        TEXT NOT NULL,
                 archived_at       TEXT
             );
@@ -335,6 +343,7 @@ def save_artifact(
       sql_result      — {"columns": [...], "rows": [...]}
       citations       — list of {page, preview} dicts
       route_explanation — plain string from query router
+      core_sources    — Phase 4d: list of {title, date, kind, score} saves used
     """
     artifact_id  = str(uuid.uuid4())
     content_json = json.dumps(content, ensure_ascii=False)
@@ -405,19 +414,6 @@ def create_upload(
 ) -> str:
     """
     Record a user-uploaded file.
-
-    Args:
-      session_id   — owning session
-      filename     — original uploaded name (e.g. 'sales_2026.csv')
-      file_type    — 'csv' | 'xlsx' | 'pdf' | 'txt'
-      target       — 'sql' (tabular → session DB) or 'rag' (document → ChromaDB)
-      table_names  — list of table names created in the session DB (sql target)
-      chunk_count  — number of vector chunks created in ChromaDB (rag target)
-      row_count    — total rows ingested across all tables (sql target)
-      summary_json — compact summary captured at ingest (columns + sample rows
-                     for tabular, preview text for PDFs). Used by core-saves.
-
-    Returns the new upload_id.
     """
     upload_id = f"upl_{uuid.uuid4().hex[:12]}"
 
@@ -829,6 +825,49 @@ def find_save_by_source(user_id: str, source_message_id: str | None = None,
         else:
             return None
         return _row_to_save(row) if row else None
+    finally:
+        conn.close()
+
+
+# ── Phase 4d: embedding I/O ────────────────────────────────
+
+def update_save_embedding(save_id: str, embedding_json: str) -> bool:
+    """
+    Cache the vector for a save. Called by main.py at save time (embed-on-save)
+    and by the one-time backfill script for pre-4d saves.
+    embedding_json is expected to be a JSON-serialized list of floats.
+    """
+    if not embedding_json:
+        return False
+    conn = _get_conn()
+    try:
+        cur = conn.execute(
+            "UPDATE core_saves SET embedding_json=? WHERE save_id=?",
+            (embedding_json, save_id)
+        )
+        conn.commit()
+        return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
+def list_saves_needing_embedding(user_id: str) -> list[dict]:
+    """
+    Return active saves for a user that don't yet have an embedding.
+    Used by scripts/backfill_save_embeddings.py.
+    """
+    conn = _get_conn()
+    try:
+        rows = conn.execute(
+            """SELECT save_id, title, content
+               FROM core_saves
+               WHERE user_id=?
+                 AND archived_at IS NULL
+                 AND (embedding_json IS NULL OR embedding_json='')
+               ORDER BY created_at ASC""",
+            (user_id,)
+        ).fetchall()
+        return [dict(r) for r in rows]
     finally:
         conn.close()
 
