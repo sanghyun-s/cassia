@@ -27,6 +27,16 @@ v2.10.0 — Phase 4e: topic-grouped sessions:
   - No in-chat header dropdown — topic assignment lives only in the sidebar
     (inline hover menu on each session row).
 
+v2.10.1 — chart fix:
+  - Chart-type inference + row reordering moved to pipelines/chart_builder.py.
+  - Fixed: "Show revenue by service line as a bar chart" used to render as
+    a line chart because the substring "line" matched "service LINE"
+    before the explicit "bar chart" phrase was checked. Now phrase-matching
+    runs first.
+  - Defensive reorder for bar charts: data table and chart now always show
+    rows DESC by the numeric column, regardless of whether the LLM included
+    ORDER BY in its SQL.
+
 ChatResponse gains (4d, unchanged):
   core_recall_attempted : bool
   core_recall_matched   : bool
@@ -57,6 +67,7 @@ from pipelines.sql_pipeline import run_sql_pipeline, get_db_connection, get_sche
 from pipelines.rag_pipeline import run_rag_pipeline
 from pipelines.core_recall_pipeline import run_core_recall_pipeline
 from pipelines.core_embed import embed_text
+from pipelines.chart_builder import build_chart_spec
 
 from db.session_store import (
     init_db,
@@ -113,7 +124,7 @@ async def lifespan(app: FastAPI):
     global CURRENT_USER_ID
     print("\n" + "═" * 52)
     print("  CoReckoner — Accounting AI Chatbot")
-    print("  v2.10.0 · Phase 4e: topic-grouped sessions")
+    print("  v2.10.1 · Phase 4e + chart fix")
     print("═" * 52)
     try:
         init_db()
@@ -155,7 +166,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="CoReckoner — Accounting AI Chatbot",
     description="Hybrid RAG + Text-to-SQL with persistent sessions, uploads, core recall, auto-titles, topic-grouped sidebar",
-    version="2.10.0",
+    version="2.10.1",
     lifespan=lifespan,
 )
 
@@ -488,12 +499,12 @@ async def chat(request: ChatRequest):
         if rag_result.get("sources"):
             _try_save_artifact(asst_msg_id, "citations", rag_result["sources"])
         if chart_hint != "none" and sql_result.get("raw_data"):
-            _try_save_artifact(asst_msg_id, "chart_spec", {
-                "chart_type": chart_hint,
-                "columns":    sql_result.get("columns", []),
-                "rows":       sql_result.get("raw_data", []),
-                "question":   question,
-            })
+            _try_save_artifact(asst_msg_id, "chart_spec", build_chart_spec(
+                columns    = sql_result.get("columns", []),
+                rows       = sql_result.get("raw_data", []),
+                question   = question,
+                chart_hint = chart_hint,
+            ))
         # Phase 4d artifacts
         if core_sources:
             _try_save_artifact(asst_msg_id, "core_sources", core_sources)

@@ -7,6 +7,13 @@ Phase 3 close-out polish:
   - Detect upload-related questions; short-circuit cleanly when no
     uploads exist (prevents LLM hallucinating user_data.revenue)
   - Append no_data nudge suggesting 📎 upload when zero rows returned
+
+Phase 4 chart-fix:
+  - Chart-type inference moved to pipelines/chart_builder.py
+  - Bar-chart results are reordered DESC by the numeric column so the
+    data table and the chart always show the same, meaningful order
+  - The LLM's explanation is built from the reordered data so the
+    narrative matches what the user sees in the table and chart
 """
 
 import re
@@ -17,6 +24,7 @@ from langchain_openai import ChatOpenAI
 from langchain.prompts import PromptTemplate
 
 from uploads.session_db import session_db_path
+from pipelines.chart_builder import infer_chart_hint, reorder_for_chart
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 DB_PATH      = PROJECT_ROOT / "outputs" / "accounting.db"
@@ -321,41 +329,11 @@ def _question_targets_uploads(question: str) -> bool:
     return any(kw in q_clean for kw in UPLOAD_KEYWORDS)
 
 
-def _infer_chart_hint(columns: list, raw_data: list, question: str) -> str:
-    q = question.lower()
-    if "pie" in q:    return "pie"
-    if "line" in q or "trend" in q or "over time" in q: return "line"
-    if "bar" in q:    return "bar"
-
-    if not raw_data or not columns:
-        return "none"
-    if len(raw_data) == 1 and len(columns) == 1:
-        return "none"
-
-    numeric_cols     = []
-    categorical_cols = []
-    for col in columns:
-        try:
-            vals       = [row[col] for row in raw_data if row.get(col) is not None]
-            float_vals = [float(v) for v in vals if str(v) != ""]
-            if len(float_vals) / max(len(vals), 1) > 0.7:
-                numeric_cols.append(col)
-            else:
-                categorical_cols.append(col)
-        except (ValueError, TypeError):
-            categorical_cols.append(col)
-
-    month_keywords = ["january","february","march","april","may","june",
-                      "july","august","september","october","november","december",
-                      "jan_","feb_","mar_","apr_","2026","2025"]
-    if any(any(kw in c.lower() for kw in month_keywords) for c in columns):
-        return "line"
-    if len(columns) == 2 and categorical_cols and numeric_cols and len(raw_data) <= 15:
-        return "bar"
-    if len(raw_data) > 1 and numeric_cols and len(raw_data) <= 20:
-        return "bar"
-
-    return "none"
+# Note: chart-type inference and row reordering used to live here as
+# _infer_chart_hint. Moved to pipelines/chart_builder.py in the Phase 4
+# chart-fix commit so chart decisions have one obvious home and so the
+# substring "line" false-positive (catching "service line" in the
+# question and routing to a line chart) could be fixed cleanly.
 
 
 def run_sql_pipeline(
@@ -408,7 +386,6 @@ def run_sql_pipeline(
         df         = pd.read_sql_query(sql, conn)
         raw_data   = df.to_dict(orient="records")
         columns    = list(df.columns)
-        result_str = df.to_string(index=False) if not df.empty else "No results found."
     except Exception as e:
         conn.close()
         return {
@@ -424,8 +401,22 @@ def run_sql_pipeline(
 
     conn.close()
 
+    # ── Phase 4 chart-fix: infer chart type, then reorder rows so the
+    # data table, the chart, and the LLM's explanation all see the same
+    # ordering. For bar charts on (categorical, numeric) data this is
+    # DESC by the numeric column. Other chart types pass through unchanged.
+    chart_hint = infer_chart_hint(columns, raw_data, question)
+    raw_data   = reorder_for_chart(columns, raw_data, chart_hint)
+
+    # Build result_str from the (possibly reordered) data so the LLM's
+    # narrative matches what the user will see in the rendered table.
+    if raw_data:
+        df_ordered = pd.DataFrame(raw_data, columns=columns)
+        result_str = df_ordered.to_string(index=False)
+    else:
+        result_str = "No results found."
+
     response_type = "no_data" if df.empty else "answer"
-    chart_hint    = _infer_chart_hint(columns, raw_data, question)
 
     exp_prompt  = EXPLANATION_PROMPT.format(question=question, result=result_str)
     explanation = llm.invoke(exp_prompt).content.strip()
