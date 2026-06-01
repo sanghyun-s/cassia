@@ -1,6 +1,6 @@
 """
 =============================================================
-CoReckoner — FastAPI Backend  (Phase 4d + auto session titles)
+CoReckoner — FastAPI Backend  (Phase 4e: topic-grouped sessions)
 =============================================================
 
 Phase 4d (natural-language recall):
@@ -15,14 +15,17 @@ Phase 4d (natural-language recall):
 v2.9.1 — auto session titles:
   - After the first user+assistant exchange in a session, a small LLM call
     generates a 3-6 word title in the user's language (English or Korean).
-  - "First exchange" is detected correctly: True for both inline-created
-    sessions AND for empty sessions created via POST /sessions then chatted
-    into (the case that left sidebar names stuck on "New Chat").
-  - Set-once on first exchange only; subsequent turns NEVER auto-regenerate.
-  - Manual rename (PATCH /sessions/{id}) still overrides anytime.
-  - Best-effort: placeholder (question[:80]) is written as a safety net
-    before the LLM call so even on failure the sidebar isn't stuck on
-    "New Chat".
+  - Set-once on first exchange only; manual rename still overrides.
+
+v2.10.0 — Phase 4e: topic-grouped sessions:
+  - sessions can be assigned to a topic (shared namespace with 4c core saves).
+  - New endpoint: PATCH /sessions/{id}/topic — set or clear a session's topic.
+  - get_all_sessions() returns topic_id so the sidebar can render groups.
+  - Smoother default in /core/save: a save inherits its source session's
+    topic_id automatically, so the user doesn't have to re-sort saves
+    that came from an already-organized session.
+  - No in-chat header dropdown — topic assignment lives only in the sidebar
+    (inline hover menu on each session row).
 
 ChatResponse gains (4d, unchanged):
   core_recall_attempted : bool
@@ -66,6 +69,7 @@ from db.session_store import (
     save_artifact,
     update_session_title,
     touch_session,
+    update_session_topic,
     ensure_default_user,
     count_users,
     count_topics,
@@ -109,7 +113,7 @@ async def lifespan(app: FastAPI):
     global CURRENT_USER_ID
     print("\n" + "═" * 52)
     print("  CoReckoner — Accounting AI Chatbot")
-    print("  v2.9.1 · Phase 4d + auto session titles")
+    print("  v2.10.0 · Phase 4e: topic-grouped sessions")
     print("═" * 52)
     try:
         init_db()
@@ -150,8 +154,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="CoReckoner — Accounting AI Chatbot",
-    description="Hybrid RAG + Text-to-SQL with persistent sessions, uploads, core recall, auto-titles",
-    version="2.9.1",
+    description="Hybrid RAG + Text-to-SQL with persistent sessions, uploads, core recall, auto-titles, topic-grouped sidebar",
+    version="2.10.0",
     lifespan=lifespan,
 )
 
@@ -199,6 +203,12 @@ class ChatResponse(BaseModel):
 
 class SessionRenameRequest(BaseModel):
     title: str
+
+
+class SessionTopicRequest(BaseModel):
+    """Phase 4e: assign or clear a session's topic."""
+    topic_id:    Optional[str] = None
+    clear_topic: bool          = False
 
 
 class CoreSaveRequest(BaseModel):
@@ -264,6 +274,23 @@ def _try_embed_save(save_id: str, text: str) -> None:
         update_save_embedding(save_id, vstr)
     except Exception as e:
         print(f"[main] embed-on-save failed for {save_id}: {e}")
+
+
+def _inherit_session_topic(source_session_id: str | None) -> str | None:
+    """
+    Phase 4e: if the save's source session has a topic assigned, inherit it.
+    Returns the topic_id or None. Best-effort — any failure returns None
+    and the save lands in Unsorted (the pre-4e default).
+    """
+    if not source_session_id:
+        return None
+    try:
+        sess = get_session(source_session_id)
+        if sess and sess.get("topic_id"):
+            return sess["topic_id"]
+    except Exception as e:
+        print(f"[main] inherit-session-topic failed: {e}")
+    return None
 
 
 # ── Auto session titles (v2.9.1) ───────────────────────────
@@ -553,6 +580,35 @@ async def rename_session(session_id: str, body: SessionRenameRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.patch("/sessions/{session_id}/topic")
+async def set_session_topic(session_id: str, body: SessionTopicRequest):
+    """
+    Phase 4e: assign a session to a topic, or move it to Unsorted.
+
+    Body forms:
+      {"topic_id": "top_abc..."}    → assign to that topic
+      {"topic_id": "__none__"}      → move to Unsorted
+      {"clear_topic": true}         → move to Unsorted (alias)
+    """
+    existing = get_session(session_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    target = body.topic_id
+    if body.clear_topic or target in ("", "__none__"):
+        target = None
+
+    try:
+        ok = update_session_topic(session_id, target)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    if not ok:
+        raise HTTPException(status_code=500, detail="Could not update session topic")
+
+    return {"status": "updated", "session_id": session_id, "topic_id": target}
+
+
 @app.delete("/sessions/{session_id}")
 async def remove_session(session_id: str):
     try:
@@ -658,6 +714,8 @@ async def core_save(body: CoreSaveRequest):
 
     if kind == "message":
         snap = _build_message_snapshot(body.source_id)
+        # Phase 4e: inherit the session's topic if it has one assigned
+        inherited_topic = _inherit_session_topic(snap.get("source_session_id"))
         try:
             save_id = create_save(
                 user_id           = CURRENT_USER_ID,
@@ -666,6 +724,7 @@ async def core_save(body: CoreSaveRequest):
                 content           = snap["content"],
                 metadata_json     = snap["metadata"],
                 note              = body.note,
+                topic_id          = inherited_topic,
                 source_session_id = snap["source_session_id"],
                 source_message_id = body.source_id,
             )
@@ -673,6 +732,8 @@ async def core_save(body: CoreSaveRequest):
             raise HTTPException(status_code=500, detail=f"Save failed: {e}")
     else:
         snap = _build_upload_snapshot(body.source_id)
+        # Phase 4e: inherit the session's topic for uploads too
+        inherited_topic = _inherit_session_topic(snap.get("source_session_id"))
         try:
             save_id = create_save(
                 user_id           = CURRENT_USER_ID,
@@ -681,6 +742,7 @@ async def core_save(body: CoreSaveRequest):
                 content           = snap["content"],
                 metadata_json     = snap["metadata"],
                 note              = body.note,
+                topic_id          = inherited_topic,
                 source_session_id = snap["source_session_id"],
                 source_upload_id  = body.source_id,
             )

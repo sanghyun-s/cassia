@@ -278,6 +278,30 @@ textarea::placeholder{color:var(--dim)}
 .core-empty{color:var(--dim);font-size:13px;text-align:center;padding:48px 20px;line-height:1.6}
 .core-empty-icon{font-size:34px;margin-bottom:10px;opacity:.5}
 
+/* ── Phase 4e: topic-grouped sessions sidebar ──────────── */
+.topic-group{margin-bottom:6px}
+.topic-group-header{display:flex;align-items:center;gap:6px;padding:6px 8px;cursor:pointer;border-radius:5px;font-size:10px;font-family:var(--mono);color:var(--dim);letter-spacing:.5px;text-transform:uppercase;transition:background .1s;user-select:none}
+.topic-group-header:hover{background:var(--surface2)}
+.topic-chevron{font-size:9px;transition:transform .15s;display:inline-block;flex-shrink:0;width:9px}
+.topic-group.collapsed .topic-chevron{transform:rotate(-90deg)}
+.topic-group.collapsed .topic-group-sessions{display:none}
+.topic-group-icon{font-size:11px;flex-shrink:0;filter:grayscale(1) opacity(.7)}
+.topic-group.unsorted .topic-group-icon{opacity:.45}
+.topic-group-name{flex:1;min-width:0;color:var(--text);font-size:11px;font-family:var(--sans);text-transform:none;letter-spacing:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.topic-group.unsorted .topic-group-name{color:var(--dim)}
+.topic-group-count{background:var(--surface3);padding:1px 7px;border-radius:10px;font-size:10px;font-family:var(--mono);color:var(--dim);flex-shrink:0}
+.topic-group-sessions{padding-left:6px;border-left:1px solid var(--border);margin-left:6px;margin-top:2px}
+
+/* Floating topic-assignment menu */
+.topic-menu{position:fixed;z-index:250;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:4px;box-shadow:0 4px 16px rgba(0,0,0,.5);min-width:170px;max-height:260px;overflow-y:auto;animation:menuPop .12s ease}
+@keyframes menuPop{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+.topic-menu-item{display:block;width:100%;text-align:left;background:none;border:none;color:var(--text);padding:7px 10px;font-size:12px;font-family:var(--sans);cursor:pointer;border-radius:5px;transition:background .1s;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.topic-menu-item:hover{background:var(--surface2)}
+.topic-menu-item.active{background:rgba(188,140,255,.15);color:var(--purple)}
+.topic-menu-item .check{display:inline-block;width:14px;font-size:11px;color:var(--purple)}
+.topic-menu-divider{height:1px;background:var(--border);margin:4px 6px}
+.topic-menu-empty{padding:10px 12px;font-size:11px;color:var(--dim);text-align:center;font-family:var(--mono);line-height:1.5}
+
 ::-webkit-scrollbar{width:4px}
 ::-webkit-scrollbar-track{background:transparent}
 ::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
@@ -415,6 +439,11 @@ let chartCounter    = 0;
 let coreTopics       = [];
 let coreSelectedTopic = null;
 
+// Phase 4e: track which topic groups in the sidebar are currently collapsed.
+// Default = all expanded (empty set). Persists across re-renders within
+// a session; resets on page reload (acceptable for a demo app).
+const collapsedTopics = new Set();
+
 const PLOTLY_LAYOUT = {
   paper_bgcolor: '#1c2333',
   plot_bgcolor:  '#1c2333',
@@ -453,42 +482,199 @@ async function checkHealth() {
 
 async function loadSessions() {
   try {
-    const r = await fetch(`${API}/sessions`);
-    const d = await r.json();
-    renderSessionList(d.sessions || []);
+    // Phase 4e: fetch sessions AND topics in parallel so the sidebar can
+    // render groups. coreTopics is kept in sync for the floating topic
+    // menu and the inherit-on-save default to work consistently.
+    const [sessRes, topRes] = await Promise.all([
+      fetch(`${API}/sessions`),
+      fetch(`${API}/core/topics`),
+    ]);
+    const sessData = await sessRes.json();
+    let topData = { topics: [] };
+    try {
+      topData = await topRes.json();
+    } catch { /* topics fetch failed — fall back to empty list */ }
+    coreTopics = topData.topics || [];
+    renderSessionList(sessData.sessions || [], coreTopics);
   } catch {
     document.getElementById('sessionItems').textContent = 'Could not load sessions.';
   }
 }
 
-function renderSessionList(sessions) {
+function renderSessionList(sessions, topics) {
   const container = document.getElementById('sessionItems');
   if (!sessions.length) {
     container.innerHTML = '<div style="color:var(--dim);font-size:12px;padding:4px 6px">No sessions yet</div>';
     return;
   }
-  container.innerHTML = sessions.map(s => {
-    const isActive = s.session_id === activeSessionId;
-    const date     = formatDate(s.updated_at);
-    const title    = escHtml(s.title || 'Untitled');
+
+  // Phase 4e: group sessions by topic_id. Topics without sessions are
+  // not rendered (no empty groups). Unsorted (null topic_id) is always
+  // shown last if it has any members.
+  const groups = new Map();   // topic_id (or '__unsorted__') -> [sessions]
+  for (const s of sessions) {
+    const tid = s.topic_id || '__unsorted__';
+    if (!groups.has(tid)) groups.set(tid, []);
+    groups.get(tid).push(s);
+  }
+
+  // Order: topics alphabetically, Unsorted last
+  const sortedTopics = [...topics].sort((a, b) =>
+    (a.name || '').localeCompare(b.name || '')
+  );
+  const ordered = [];
+  for (const t of sortedTopics) {
+    if (groups.has(t.topic_id)) {
+      ordered.push({ id: t.topic_id, name: t.name, sessions: groups.get(t.topic_id), isUnsorted: false });
+    }
+  }
+  if (groups.has('__unsorted__')) {
+    ordered.push({ id: '__unsorted__', name: 'Unsorted', sessions: groups.get('__unsorted__'), isUnsorted: true });
+  }
+
+  container.innerHTML = ordered.map(g => {
+    const collapsed = collapsedTopics.has(g.id) ? 'collapsed' : '';
+    const unsortedCls = g.isUnsorted ? 'unsorted' : '';
     return `
-      <div class="session-item ${isActive ? 'active' : ''}"
-           id="sess-${s.session_id}"
-           onclick="openSession('${s.session_id}')">
-        <div class="session-item-text">
-          <div class="session-title-view" id="title-view-${s.session_id}">${title}</div>
-          <input class="session-title-input" id="title-input-${s.session_id}"
-                 value="${title}"
-                 onblur="commitRename('${s.session_id}')"
-                 onkeydown="renameKeydown(event,'${s.session_id}')"/>
-          <div class="session-date">${date}</div>
+      <div class="topic-group ${collapsed} ${unsortedCls}" data-topic-id="${g.id}">
+        <div class="topic-group-header" onclick="toggleTopicGroup('${g.id}')">
+          <span class="topic-chevron">▼</span>
+          <span class="topic-group-icon">📁</span>
+          <span class="topic-group-name">${escHtml(g.name)}</span>
+          <span class="topic-group-count">${g.sessions.length}</span>
         </div>
-        <div class="session-actions">
-          <button class="session-action-btn" onclick="startRename(event,'${s.session_id}')" title="Rename">✏️</button>
-          <button class="session-action-btn del" onclick="deleteSession(event,'${s.session_id}')" title="Delete">✕</button>
+        <div class="topic-group-sessions">
+          ${g.sessions.map(sessionRowHtml).join('')}
         </div>
       </div>`;
   }).join('');
+}
+
+function sessionRowHtml(s) {
+  const isActive = s.session_id === activeSessionId;
+  const date     = formatDate(s.updated_at);
+  const title    = escHtml(s.title || 'Untitled');
+  const tid      = s.topic_id || '';
+  return `
+    <div class="session-item ${isActive ? 'active' : ''}"
+         id="sess-${s.session_id}"
+         onclick="openSession('${s.session_id}')">
+      <div class="session-item-text">
+        <div class="session-title-view" id="title-view-${s.session_id}">${title}</div>
+        <input class="session-title-input" id="title-input-${s.session_id}"
+               value="${title}"
+               onblur="commitRename('${s.session_id}')"
+               onkeydown="renameKeydown(event,'${s.session_id}')"/>
+        <div class="session-date">${date}</div>
+      </div>
+      <div class="session-actions">
+        <button class="session-action-btn" onclick="startRename(event,'${s.session_id}')" title="Rename">✏️</button>
+        <button class="session-action-btn" onclick="showSessionTopicMenu(event,'${s.session_id}','${tid}')" title="Move to topic">📁</button>
+        <button class="session-action-btn del" onclick="deleteSession(event,'${s.session_id}')" title="Delete">✕</button>
+      </div>
+    </div>`;
+}
+
+function toggleTopicGroup(topicId) {
+  // Direct DOM toggle — keeps scroll position and avoids re-render churn
+  if (collapsedTopics.has(topicId)) {
+    collapsedTopics.delete(topicId);
+  } else {
+    collapsedTopics.add(topicId);
+  }
+  const el = document.querySelector(`.topic-group[data-topic-id="${topicId}"]`);
+  if (el) el.classList.toggle('collapsed');
+}
+
+// ── Floating session-topic menu (Phase 4e) ───────────────
+function showSessionTopicMenu(event, sessionId, currentTopicId) {
+  event.stopPropagation();
+  closeSessionTopicMenu();
+
+  const menu = document.createElement('div');
+  menu.className = 'topic-menu';
+  menu.id = 'session-topic-menu';
+
+  let html = '';
+  // "Unsorted" entry
+  const isNoneActive = !currentTopicId;
+  html += `
+    <button class="topic-menu-item ${isNoneActive ? 'active' : ''}"
+            onclick="assignSessionTopic('${sessionId}', '__none__')">
+      <span class="check">${isNoneActive ? '✓' : ''}</span>📂 Unsorted
+    </button>`;
+
+  if (coreTopics.length) {
+    html += `<div class="topic-menu-divider"></div>`;
+    for (const t of coreTopics) {
+      const isActive = t.topic_id === currentTopicId;
+      html += `
+        <button class="topic-menu-item ${isActive ? 'active' : ''}"
+                onclick="assignSessionTopic('${sessionId}', '${t.topic_id}')">
+          <span class="check">${isActive ? '✓' : ''}</span>📁 ${escHtml(t.name)}
+        </button>`;
+    }
+  } else {
+    html += `<div class="topic-menu-empty">No topics yet.<br>Create one in 🗄 My Core.</div>`;
+  }
+
+  menu.innerHTML = html;
+  document.body.appendChild(menu);
+
+  // Position the menu near the clicked button, keeping it on-screen
+  const btnRect = event.currentTarget.getBoundingClientRect();
+  const menuRect = menu.getBoundingClientRect();
+  let top  = btnRect.bottom + 4;
+  let left = btnRect.right - menuRect.width;   // right-align to the button
+  if (left < 8) left = 8;
+  if (top + menuRect.height > window.innerHeight - 8) {
+    top = btnRect.top - menuRect.height - 4;   // flip above if overflowing
+  }
+  menu.style.top  = top + 'px';
+  menu.style.left = left + 'px';
+
+  // Close on outside click (next tick to ignore the click that opened us)
+  setTimeout(() => {
+    document.addEventListener('mousedown', closeSessionTopicMenuOnOutside);
+  }, 0);
+}
+
+function closeSessionTopicMenu() {
+  const m = document.getElementById('session-topic-menu');
+  if (m) m.remove();
+  document.removeEventListener('mousedown', closeSessionTopicMenuOnOutside);
+}
+
+function closeSessionTopicMenuOnOutside(e) {
+  const m = document.getElementById('session-topic-menu');
+  if (!m) return;
+  if (!m.contains(e.target)) closeSessionTopicMenu();
+}
+
+async function assignSessionTopic(sessionId, topicValue) {
+  closeSessionTopicMenu();
+  const body = (topicValue === '__none__')
+    ? { clear_topic: true }
+    : { topic_id: topicValue };
+  try {
+    const r = await fetch(`${API}/sessions/${sessionId}/topic`, {
+      method:  'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify(body),
+    });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      showToast('error', 'Could not move session', err.detail || 'Server error');
+      return;
+    }
+    const label = topicValue === '__none__'
+      ? 'Unsorted'
+      : (coreTopics.find(t => t.topic_id === topicValue)?.name || 'topic');
+    showToast('core', 'Session moved', label);
+    await loadSessions();
+  } catch (e) {
+    showToast('error', 'Could not move session', e.message || 'Network error');
+  }
 }
 
 function formatDate(iso) {
@@ -1055,6 +1241,7 @@ async function createCoreTopic() {
     input.value = '';
     showToast('core', 'Topic created', name);
     await loadCoreTopics();
+    await loadSessions();   // 4e: new topic is now available in the floating menu
   } catch (e) {
     showToast('error', 'Could not create topic', e.message || 'Network error');
   }
@@ -1082,6 +1269,7 @@ async function renameCoreTopic(e, topicId, currentName) {
       return;
     }
     await loadCoreTopics();
+    await loadSessions();   // 4e: sidebar group header text needs the new name
   } catch (e2) {
     showToast('error', 'Rename failed', e2.message || 'Network error');
   }
@@ -1100,6 +1288,7 @@ async function deleteCoreTopic(e, topicId, name) {
     showToast('core', 'Topic deleted', `${name} · saves moved to Unsorted`);
     if (coreSelectedTopic === topicId) coreSelectedTopic = null;
     await loadCoreTopics();
+    await loadSessions();   // 4e: sessions that were in this topic now go to Unsorted
   } catch (e2) {
     showToast('error', 'Delete failed', e2.message || 'Network error');
   }

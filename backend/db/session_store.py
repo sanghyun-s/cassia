@@ -27,6 +27,13 @@ Phase 4d:
   - The embedding_json column itself was provisioned back in 4a, so no
     schema change here.
 
+Phase 4e:
+  - sessions gains a topic_id column for the topic-grouped sidebar.
+  - update_session_topic(session_id, topic_id) sets it.
+  - get_all_sessions() returns topic_id so the sidebar can render groups.
+  - delete_topic() explicitly clears sessions.topic_id (the FK works on
+    fresh-created 4e DBs but not on migrated ones via ALTER TABLE).
+
 Usage:
   from db.session_store import (
       init_db, create_session, get_all_sessions,
@@ -38,6 +45,7 @@ Usage:
       create_save, list_saves, get_save, update_save_topic, archive_save,
       count_users, count_topics, count_saves,
       update_save_embedding, list_saves_needing_embedding,   # 4d
+      update_session_topic,                                  # 4e
   )
 """
 
@@ -101,6 +109,7 @@ def init_db() -> None:
             CREATE TABLE IF NOT EXISTS sessions (
                 session_id  TEXT PRIMARY KEY,
                 title       TEXT NOT NULL DEFAULT 'New Chat',
+                topic_id    TEXT REFERENCES core_topics(topic_id) ON DELETE SET NULL,
                 created_at  TEXT NOT NULL,
                 updated_at  TEXT NOT NULL
             );
@@ -193,6 +202,11 @@ def init_db() -> None:
         # The uploads table may already exist from before 4b-1 without
         # summary_json. CREATE TABLE IF NOT EXISTS won't add it — ALTER does.
         _ensure_column(conn, "uploads", "summary_json", "TEXT")
+        # Phase 4e: sessions gain topic_id for topic-grouped sidebar.
+        # On pre-4e DBs the column is added without a working REFERENCES
+        # constraint (SQLite limitation); delete_topic() explicitly clears
+        # affected rows to compensate.
+        _ensure_column(conn, "sessions", "topic_id", "TEXT")
 
         conn.commit()
     finally:
@@ -246,15 +260,33 @@ def touch_session(session_id: str) -> None:
         conn.close()
 
 
+def update_session_topic(session_id: str, topic_id: str | None) -> bool:
+    """
+    Phase 4e: assign a session to a topic (or to no topic if topic_id is None).
+    Returns True if a row was updated. Also bumps updated_at so the sidebar
+    reflects the change immediately.
+    """
+    conn = _get_conn()
+    try:
+        cur = conn.execute(
+            "UPDATE sessions SET topic_id=?, updated_at=? WHERE session_id=?",
+            (topic_id, _now(), session_id)
+        )
+        conn.commit()
+        return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
 def get_all_sessions() -> list[dict]:
     """
     Return all sessions ordered by most recently updated.
-    Used for the sidebar list.
+    Used for the sidebar list. Phase 4e: includes topic_id for grouping.
     """
     conn = _get_conn()
     try:
         rows = conn.execute(
-            "SELECT session_id, title, created_at, updated_at FROM sessions ORDER BY updated_at DESC"
+            "SELECT session_id, title, topic_id, created_at, updated_at FROM sessions ORDER BY updated_at DESC"
         ).fetchall()
         return [dict(r) for r in rows]
     finally:
@@ -618,11 +650,20 @@ def rename_topic(topic_id: str, new_name: str) -> bool:
 def delete_topic(topic_id: str) -> bool:
     """
     Delete a topic. Saves keep their data but lose the topic
-    (topic_id set to NULL via ON DELETE SET NULL).
+    (topic_id set to NULL via ON DELETE SET NULL on core_saves).
+
+    Phase 4e: also clears topic_id from any sessions that referenced it.
+    For DBs created fresh with 4e, sessions has an ON DELETE SET NULL FK,
+    but for migrated DBs (column added via ALTER) the FK doesn't take
+    effect — clearing explicitly here covers both cases.
+
     Returns True if a row was deleted.
     """
     conn = _get_conn()
     try:
+        conn.execute(
+            "UPDATE sessions SET topic_id=NULL WHERE topic_id=?", (topic_id,)
+        )
         cur = conn.execute("DELETE FROM core_topics WHERE topic_id=?", (topic_id,))
         conn.commit()
         return cur.rowcount > 0
