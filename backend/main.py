@@ -1,22 +1,34 @@
 """
 =============================================================
-CoReckoner — FastAPI Backend  (Phase 4d)
+CoReckoner — FastAPI Backend  (Phase 4d + auto session titles)
 =============================================================
 
 Phase 4d (natural-language recall):
   - Router learns a 4th route: 'core_recall' (triggers + LLM + fall-through)
-  - new pipelines/core_recall_pipeline.py does cosine similarity over saves
-  - new pipelines/core_embed.py provides embed_text + cosine_similarity
+  - pipelines/core_recall_pipeline.py does cosine similarity over saves
+  - pipelines/core_embed.py provides embed_text + cosine_similarity
   - core_saves are embedded at save time (call into core_embed in /core/save)
   - When core_recall returns no match, /chat falls through to the normal
-    pipeline AND surfaces a visible "no recall match" banner via a new
-    artifact `core_fallthrough_note`.
+    pipeline AND surfaces a visible "no recall match" banner via the
+    `core_fallthrough_note` artifact.
 
-ChatResponse gains:
-  core_recall_attempted : bool   — true when the question was routed to core
-  core_recall_matched   : bool   — true when it actually returned results
-  core_fallthrough_note : str    — set when matched=False so the UI can show it
-  core_sources          : list   — when matched=True, the saves cited (title+date)
+v2.9.1 — auto session titles:
+  - After the first user+assistant exchange in a session, a small LLM call
+    generates a 3-6 word title in the user's language (English or Korean).
+  - "First exchange" is detected correctly: True for both inline-created
+    sessions AND for empty sessions created via POST /sessions then chatted
+    into (the case that left sidebar names stuck on "New Chat").
+  - Set-once on first exchange only; subsequent turns NEVER auto-regenerate.
+  - Manual rename (PATCH /sessions/{id}) still overrides anytime.
+  - Best-effort: placeholder (question[:80]) is written as a safety net
+    before the LLM call so even on failure the sidebar isn't stuck on
+    "New Chat".
+
+ChatResponse gains (4d, unchanged):
+  core_recall_attempted : bool
+  core_recall_matched   : bool
+  core_fallthrough_note : str
+  core_sources          : list
 """
 
 import os
@@ -97,7 +109,7 @@ async def lifespan(app: FastAPI):
     global CURRENT_USER_ID
     print("\n" + "═" * 52)
     print("  CoReckoner — Accounting AI Chatbot")
-    print("  Phase 4d: natural-language core recall")
+    print("  v2.9.1 · Phase 4d + auto session titles")
     print("═" * 52)
     try:
         init_db()
@@ -119,8 +131,7 @@ async def lifespan(app: FastAPI):
     print(f"  {'✓' if DB_PATH.exists() else '⚠'} accounting.db  {'found' if DB_PATH.exists() else 'NOT found'}")
     print(f"  {'✓' if CHROMA_DIR.exists() else '⚠'} chroma_db     {'found' if CHROMA_DIR.exists() else 'NOT found'}")
 
-    # Phase 4d: warn if any saves still lack embeddings (the backfill script
-    # should be run once after upgrading to v2.9.0).
+    # Phase 4d: warn if any saves still lack embeddings
     try:
         unembedded = list_saves_needing_embedding(CURRENT_USER_ID)
         if unembedded:
@@ -139,8 +150,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="CoReckoner — Accounting AI Chatbot",
-    description="Hybrid RAG + Text-to-SQL with persistent sessions, uploads, and core recall",
-    version="2.9.0",
+    description="Hybrid RAG + Text-to-SQL with persistent sessions, uploads, core recall, auto-titles",
+    version="2.9.1",
     lifespan=lifespan,
 )
 
@@ -243,8 +254,7 @@ def _try_touch(session_id) -> None:
 
 def _try_embed_save(save_id: str, text: str) -> None:
     """
-    Phase 4d: embed a save and cache its vector. Best-effort — a failure
-    here doesn't block the save itself; the backfill script can fill later.
+    Phase 4d: embed a save and cache its vector. Best-effort.
     """
     if not save_id or not text:
         return
@@ -254,6 +264,50 @@ def _try_embed_save(save_id: str, text: str) -> None:
         update_save_embedding(save_id, vstr)
     except Exception as e:
         print(f"[main] embed-on-save failed for {save_id}: {e}")
+
+
+# ── Auto session titles (v2.9.1) ───────────────────────────
+
+TITLE_GEN_PROMPT = (
+    "Generate a brief, descriptive title for this accounting chat conversation.\n"
+    "Rules:\n"
+    "- 3 to 6 words\n"
+    "- Use the SAME language as the user's question (English or Korean)\n"
+    "- Capture the topic, not the user's exact phrasing\n"
+    "- No quotation marks, no trailing punctuation\n"
+    "- Examples: Q1 2026 Net Income, Revenue by Service Line, "
+    "IRS Late Deposit Penalty, 직원 급여 원천징수, AR Aging Over 60 Days\n\n"
+    "User question: {question}\n"
+    "Assistant answer (first 300 chars): {answer_preview}\n\n"
+    "Title:"
+)
+
+
+def _try_generate_session_title(session_id: str, question: str,
+                                 answer: str, llm: ChatOpenAI) -> None:
+    """
+    Generate a short, language-matched session title via a small LLM call.
+    Best-effort — failure leaves whatever placeholder is currently set.
+    Fires only on a session's first exchange; never auto-regenerates.
+    """
+    if not session_id or not question:
+        return
+    try:
+        prompt = TITLE_GEN_PROMPT.format(
+            question=question[:500],
+            answer_preview=(answer or "")[:300],
+        )
+        resp = llm.invoke(prompt)
+        title = (resp.content or "").strip()
+        # Sanitize: strip enclosing quotes, trailing punctuation
+        title = title.strip('"\'`').strip()
+        title = title.rstrip(".!?,;: ")
+        # Sanity guards: keep within DB column constraint, never write empty
+        if not title or len(title) > 80:
+            return
+        update_session_title(session_id, title)
+    except Exception as e:
+        print(f"[main] auto-title failed for {session_id}: {e}")
 
 
 # ── CHAT ENDPOINT ──────────────────────────────────────────
@@ -267,9 +321,9 @@ async def chat(request: ChatRequest):
     timestamp = datetime.now().isoformat()
     llm       = get_llm()
 
-    session_id     = request.session_id
-    is_new_session = not session_id
+    session_id = request.session_id
 
+    # Validate any incoming session_id; treat as fresh if not found
     if session_id:
         try:
             if not get_session(session_id):
@@ -277,20 +331,32 @@ async def chat(request: ChatRequest):
         except Exception:
             session_id = None
 
+    # Create a session inline if we still don't have one
+    session_was_just_created = False
     if not session_id:
         try:
             sess       = create_session(title=question[:80])
             session_id = sess["session_id"]
+            session_was_just_created = True
         except Exception:
             import uuid
             session_id = str(uuid.uuid4())
+            session_was_just_created = True
 
-    _try_save_message(session_id, "user", question)
-    if is_new_session:
+    # ── Detect "first exchange" (for auto-title generation) ──
+    # True if we just created the session inline, OR if the session existed
+    # (e.g., from POST /sessions) but had no prior messages. This catches
+    # the "+ New Chat" → first-message path that previously left titles
+    # stuck on "New Chat".
+    is_first_exchange = session_was_just_created
+    if not is_first_exchange:
         try:
-            update_session_title(session_id, question[:80])
+            prior_messages = get_session_messages(session_id)
+            is_first_exchange = (len(prior_messages) == 0)
         except Exception:
             pass
+
+    _try_save_message(session_id, "user", question)
 
     # Phase 4 warm-up: pass session_id so the router knows about uploaded PDFs
     route_result = classify_question(question, llm, session_id=session_id)
@@ -325,13 +391,10 @@ async def chat(request: ChatRequest):
                 pipeline_used = "core_recall"
                 response_type = core_result.get("response_type", "answer")
             else:
-                # Fall through to normal classification (sql/rag/both).
-                # Reclassify WITHOUT the trigger, by asking the LLM directly.
-                # Keep core_fallnote so the UI can surface it.
+                # Fall through to normal classification (sql/rag/both)
                 core_fallnote = core_result.get("answer") or (
                     "Nothing in your saved core matched this — answering live instead."
                 )
-                # Re-route via LLM (skip trigger detection by going direct).
                 from routers.query_router import route_with_llm
                 pdf_filenames = []
                 try:
@@ -341,13 +404,12 @@ async def chat(request: ChatRequest):
                 except Exception:
                     pass
                 fallback_route = route_with_llm(question, llm, pdf_filenames=pdf_filenames)
-                # Demote fallback's own core_recall result to sql to avoid loop
                 if fallback_route == "core_recall":
                     fallback_route = "sql"
                 route = fallback_route.value if hasattr(fallback_route, "value") else fallback_route
                 pipeline_used = f"core_recall→{route}"
 
-        # ── Standard pipelines (also runs when fall-through reassigned route) ──
+        # ── Standard pipelines ──
         if route in ("sql", "both"):
             sql_result = run_sql_pipeline(question, llm, DB_PATH, session_id=session_id)
             response_type = sql_result.get("response_type", "answer")
@@ -360,7 +422,6 @@ async def chat(request: ChatRequest):
             if route == "rag":
                 response_type = rag_result.get("response_type", "answer")
 
-        # Compose final_answer if we didn't already (i.e. not core_matched)
         if not core_matched:
             if route == "both":
                 sql_ans = sql_result.get("answer", "")
@@ -406,13 +467,24 @@ async def chat(request: ChatRequest):
                 "rows":       sql_result.get("raw_data", []),
                 "question":   question,
             })
-        # Phase 4d artifacts (so restored sessions still show recall context)
+        # Phase 4d artifacts
         if core_sources:
             _try_save_artifact(asst_msg_id, "core_sources", core_sources)
         if core_fallnote:
             _try_save_artifact(asst_msg_id, "core_fallthrough_note", core_fallnote)
 
     _try_touch(session_id)
+
+    # ── Auto session title (v2.9.1) ──
+    # Fires AFTER the first exchange completes. Sets a safety-net placeholder
+    # from the question, then upgrades to a clean LLM-summarized title.
+    # Best-effort: either step can fail without breaking the chat.
+    if is_first_exchange:
+        try:
+            update_session_title(session_id, question[:80])
+        except Exception:
+            pass
+        _try_generate_session_title(session_id, question, final_answer, llm)
 
     return ChatResponse(
         session_id        = session_id,
@@ -483,10 +555,6 @@ async def rename_session(session_id: str, body: SessionRenameRequest):
 
 @app.delete("/sessions/{session_id}")
 async def remove_session(session_id: str):
-    """
-    Delete a session and cascade cleanup. core_saves are intentionally
-    preserved (see Phase 4b decision).
-    """
     try:
         deleted = delete_session(session_id)
     except Exception as e:
@@ -512,7 +580,6 @@ async def remove_session(session_id: str):
 # ── CORE SAVE ENDPOINTS (Phase 4b-2) ───────────────────────
 
 def _build_message_snapshot(message_id: str) -> dict:
-    """Snapshot an assistant message: text + artifacts → core save payload."""
     from db.session_store import _get_conn
     conn = _get_conn()
     try:
@@ -545,7 +612,6 @@ def _build_message_snapshot(message_id: str) -> dict:
 
 
 def _build_upload_snapshot(upload_id: str) -> dict:
-    """Snapshot an upload from its 4b-1 summary."""
     up = get_upload(upload_id)
     if not up:
         raise HTTPException(status_code=404, detail=f"Upload {upload_id} not found")
@@ -584,10 +650,6 @@ def _build_upload_snapshot(upload_id: str) -> dict:
 
 @app.post("/core/save")
 async def core_save(body: CoreSaveRequest):
-    """
-    Save a message or upload. Phase 4d: also embed the content immediately
-    so recall finds it without a separate backfill step.
-    """
     kind = (body.kind or "").strip()
     if kind not in ("message", "upload"):
         raise HTTPException(status_code=400, detail="kind must be 'message' or 'upload'")
@@ -625,8 +687,6 @@ async def core_save(body: CoreSaveRequest):
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Save failed: {e}")
 
-    # Phase 4d: embed-on-save. Best-effort. Skip if this save already had an
-    # embedding (idempotent re-save).
     existing = get_save(save_id)
     if existing and not existing.get("embedding_json"):
         _try_embed_save(save_id, snap["content"])
@@ -643,7 +703,6 @@ async def core_save(body: CoreSaveRequest):
 @app.get("/core/saves")
 async def core_saves(source_message_id: Optional[str] = None,
                      source_upload_id:  Optional[str] = None):
-    """Look up an active save by its source (for filled-button state)."""
     if not source_message_id and not source_upload_id:
         raise HTTPException(
             status_code=400,
@@ -815,7 +874,6 @@ async def get_stats():
     except Exception as e:
         print(f"[main] stats core counts failed: {e}")
 
-    # Phase 4d: surface how many saves still need embedding
     try:
         stats["saves_needing_embedding"] = len(list_saves_needing_embedding(CURRENT_USER_ID))
     except Exception:
