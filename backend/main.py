@@ -63,6 +63,9 @@ from langchain_openai import ChatOpenAI
 
 from routers.query_router import classify_question
 from routers.upload_router import router as upload_router
+from routers.auth_router  import router as auth_router
+
+from db.auth_migrations import migrate as auth_migrate
 from pipelines.sql_pipeline import run_sql_pipeline, get_db_connection, get_schema
 from pipelines.rag_pipeline import run_rag_pipeline
 from pipelines.core_recall_pipeline import run_core_recall_pipeline
@@ -133,6 +136,12 @@ async def lifespan(app: FastAPI):
         print(f"  ⚠ coreckoner.db init failed: {e}")
 
     try:
+        auth_migrate()
+        print("  ✓ auth migrations applied")
+    except Exception as e:
+        print(f"  ⚠ auth migrations failed: {e}")
+
+    try:
         CURRENT_USER_ID = ensure_default_user()
         print(f"  ✓ default user ensured ({CURRENT_USER_ID})")
     except Exception as e:
@@ -178,6 +187,7 @@ app.add_middleware(
 )
 
 app.include_router(upload_router)
+app.include_router(auth_router)
 
 static_dir = PROJECT_ROOT / "backend" / "static"
 static_dir.mkdir(exist_ok=True)
