@@ -1,6 +1,6 @@
 """
 =============================================================
-CASSIA — Phase 5a auth router
+CASSIA — Phase 5a auth router (updated for Phase 5b/c)
 =============================================================
 
 FastAPI router with four endpoints:
@@ -10,15 +10,20 @@ FastAPI router with four endpoints:
   POST /auth/logout  — delete the current session, clear the cookie
   GET  /auth/me      — return the current user (or 401)
 
-Wiring: add `app.include_router(auth_router)` in main.py.
-
-Locked design decisions:
+Locked design decisions (unchanged from Phase 5a):
   • Signup requires SIGNUP_INVITE_CODE from .env — invite-only MVP.
   • Login accepts EITHER email OR username (single 'identifier' field).
   • Lookup is case-insensitive for both email and username.
-  • First real signup (when count_real_users() returned 0 before this
-    user was created) automatically claims all orphaned demo data.
   • Username is OPTIONAL at signup; email is REQUIRED.
+
+Phase 5b/c additions:
+  • Login now calls reclaim_data_for_user() — recovers data for users
+    who signed up in Phase 5a but had their data un-claimed back to
+    default. Idempotent: no-op if the user already owns data, or if
+    no orphans exist.
+  • Both signup and login responses include a `reclaimed_summary`
+    field so the frontend can show a "welcome back, claimed N items"
+    toast when applicable.
 """
 
 from __future__ import annotations
@@ -52,6 +57,7 @@ from db.auth_queries import (
     get_user_by_email,
     get_user_by_username,
 )
+from db.auth_reclaim import reclaim_data_for_user
 
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -63,12 +69,6 @@ _SIGNUP_INVITE_CODE = os.getenv("SIGNUP_INVITE_CODE", "")
 
 
 # ── Request / response models ─────────────────────────────
-
-# Validation rules:
-#   email: standard shape, 5-254 chars
-#   username: 3-30 chars, alphanumeric + . _ -  (no whitespace, no @)
-#   password: at least 8 chars (no upper limit — bcrypt handles long inputs)
-#   invite_code: any non-empty string
 
 _USERNAME_RE = re.compile(r"^[A-Za-z0-9._-]{3,30}$")
 _EMAIL_RE    = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
@@ -94,18 +94,19 @@ class AuthMeResponse(BaseModel):
 
 
 class SignupResponse(BaseModel):
-    status:           str
-    user_id:          str
-    email:            str
-    username:         Optional[str] = None
-    claimed_summary:  Optional[dict] = None   # set only on the first signup
+    status:             str
+    user_id:            str
+    email:              str
+    username:           Optional[str] = None
+    claimed_summary:    Optional[dict] = None   # set only on the very first signup
 
 
 class LoginResponse(BaseModel):
-    status:   str
-    user_id:  str
-    email:    str
-    username: Optional[str] = None
+    status:             str
+    user_id:            str
+    email:              str
+    username:           Optional[str] = None
+    reclaimed_summary:  Optional[dict] = None   # set when login triggered a reclaim
 
 
 class LogoutResponse(BaseModel):
@@ -115,7 +116,6 @@ class LogoutResponse(BaseModel):
 # ── Helpers ───────────────────────────────────────────────
 
 def _validate_email(value: str) -> str:
-    """Trim + lowercase-friendly shape check. Raises 400 on invalid."""
     email = (value or "").strip()
     if not _EMAIL_RE.match(email):
         raise HTTPException(
@@ -126,10 +126,6 @@ def _validate_email(value: str) -> str:
 
 
 def _validate_username(value: Optional[str]) -> Optional[str]:
-    """
-    Username is optional. If present, must match the regex.
-    Returns the cleaned value or None.
-    """
     if value is None:
         return None
     u = value.strip()
@@ -144,10 +140,7 @@ def _validate_username(value: Optional[str]) -> Optional[str]:
 
 
 def _check_invite_code(provided: str) -> None:
-    """Compare against env. Raises 403 on mismatch or missing env."""
     if not _SIGNUP_INVITE_CODE:
-        # Misconfigured server — refuse to allow signup at all rather than
-        # silently letting everyone through.
         raise HTTPException(
             status_code = status.HTTP_503_SERVICE_UNAVAILABLE,
             detail      = "Signup is disabled (server not configured)",
@@ -160,7 +153,6 @@ def _check_invite_code(provided: str) -> None:
 
 
 def _check_email_available(email: str) -> None:
-    """Raises 409 if email already in use."""
     if get_user_by_email(email):
         raise HTTPException(
             status_code = status.HTTP_409_CONFLICT,
@@ -169,7 +161,6 @@ def _check_email_available(email: str) -> None:
 
 
 def _check_username_available(username: Optional[str]) -> None:
-    """Raises 409 if username already in use. No-op if username is None."""
     if username is None:
         return
     if get_user_by_username(username):
@@ -191,6 +182,7 @@ def signup(body: SignupRequest, response: Response):
       2. Confirm email/username are not already taken
       3. Hash password, create user row
       4. If this is the FIRST real user, claim all orphaned demo data
+         (Phase 5a behavior — unchanged)
       5. Create an auth session, set the cookie, return the user
     """
     _check_invite_code(body.invite_code)
@@ -201,9 +193,7 @@ def signup(body: SignupRequest, response: Response):
     _check_email_available(email)
     _check_username_available(username)
 
-    # Detect "first real signup" BEFORE we create the user.
     was_first_signup = (count_real_users() == 0)
-
     password_hash_value = hash_password(body.password)
 
     try:
@@ -214,8 +204,6 @@ def signup(body: SignupRequest, response: Response):
             invite_code_used = body.invite_code.strip(),
         )
     except Exception as e:
-        # Most likely an integrity error from a race condition (someone
-        # else just took the email/username). Surface a clean conflict.
         msg = str(e).lower()
         if "unique" in msg or "constraint" in msg:
             raise HTTPException(
@@ -227,17 +215,13 @@ def signup(body: SignupRequest, response: Response):
             detail      = f"Could not create account: {e}",
         )
 
-    # First-signup data claim
     claimed_summary = None
     if was_first_signup:
         try:
             claimed_summary = claim_orphaned_data(user_id)
         except Exception as e:
-            # Non-fatal — log and continue. The user account exists; they
-            # just won't auto-inherit the demo data. Can be re-run manually.
             print(f"[auth_router] claim_orphaned_data failed: {e}")
 
-    # Issue a session immediately (don't make the user log in after signup)
     token = generate_session_token()
     create_auth_session(user_id, token, expiry_from_now().isoformat())
     set_session_cookie(response, token)
@@ -258,6 +242,13 @@ def login(body: LoginRequest, response: Response):
 
     Returns the same 401 message for unknown account and wrong password
     (intentional — prevents email enumeration).
+
+    Phase 5b/c: after successful authentication, runs reclaim_data_for_user()
+    which is a no-op unless this user owns no data AND orphaned data exists.
+    This handles the Phase 5a → Phase 5b/c recovery case where a user
+    signed up under 5a, had their data un-claimed back to default to keep
+    the Phase 4 UI working, and is now logging in for the first time
+    under proper endpoint scoping.
     """
     user_row = find_user_by_identifier(body.identifier)
     if not user_row:
@@ -267,7 +258,6 @@ def login(body: LoginRequest, response: Response):
         )
 
     if not user_row.get("password_hash"):
-        # The 'default' user has no password — refuse without leaking that fact.
         raise HTTPException(
             status_code = status.HTTP_401_UNAUTHORIZED,
             detail      = "Invalid email/username or password",
@@ -284,11 +274,21 @@ def login(body: LoginRequest, response: Response):
     create_auth_session(user_row["user_id"], token, expiry_from_now().isoformat())
     set_session_cookie(response, token)
 
+    # Phase 5b/c — try reclaim. Best-effort; never blocks login.
+    reclaimed_summary = None
+    try:
+        result = reclaim_data_for_user(user_row["user_id"])
+        if result.get("reclaimed"):
+            reclaimed_summary = result
+    except Exception as e:
+        print(f"[auth_router] reclaim_data_for_user failed on login: {e}")
+
     return LoginResponse(
-        status   = "ok",
-        user_id  = user_row["user_id"],
-        email    = user_row.get("email") or "",
-        username = user_row.get("username"),
+        status            = "ok",
+        user_id           = user_row["user_id"],
+        email             = user_row.get("email") or "",
+        username          = user_row.get("username"),
+        reclaimed_summary = reclaimed_summary,
     )
 
 
@@ -298,15 +298,14 @@ def logout(request: Request, response: Response):
     Delete the current session server-side and clear the cookie.
 
     Idempotent — calling logout when not logged in still succeeds with
-    a clean cookie state. No 401 here.
+    a clean cookie state.
     """
     token = request.cookies.get(COOKIE_NAME)
     if token:
         try:
             delete_auth_session(token)
         except Exception:
-            pass  # we still clear the cookie regardless
-
+            pass
     clear_session_cookie(response)
     return LogoutResponse(status="logged_out")
 

@@ -1,6 +1,6 @@
 """
 =============================================================
-UPLOAD ROUTER — /uploads endpoints  (Phase 3 C3 + 4b-1)
+UPLOAD ROUTER — /uploads endpoints  (Phase 5b/c)
 =============================================================
 
 Endpoints:
@@ -9,25 +9,31 @@ Endpoints:
   GET    /sessions/{session_id}/uploads             list uploads
   DELETE /uploads/{upload_id}                       remove an upload
 
-Phase 3 C3:
-  - PDF preview + ingest live; DELETE handles 'rag' target (ChromaDB)
-
-Phase 4b-1:
-  - Each create_upload() now stores the summary captured at ingest
-    (summary_json) so core-saves can be rich without re-reading files.
+Phase 5b/c changes (this version):
+  - Every endpoint requires current_user via get_current_user dependency
+  - Session ownership is verified before any preview/ingest/list
+  - DELETE verifies the upload itself belongs to the caller
+  - create_upload() now receives user_id (stored on the row for future
+    per-user filtering in Pass 3)
+  - PDF ingest gets user_id passed through to ingest_pdf() — Pass 3 will
+    use it for ChromaDB vector metadata. For now ingest_pdf signature
+    stays compatible; the kwarg is forward-looking and ignored if
+    document.py hasn't been updated yet.
 """
 
 import json
 from pathlib import Path
 
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException, status
+from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException, status
 
+from auth import User, get_current_user
 from db.session_store import (
-    get_session,
     create_upload,
     list_uploads,
     get_upload,
     delete_upload_record,
+    session_belongs_to_user,
+    upload_belongs_to_user,
 )
 from uploads.tabular    import preview_csv, preview_xlsx, ingest_csv, ingest_xlsx
 from uploads.session_db import drop_tables
@@ -40,16 +46,11 @@ MAX_UPLOAD_BYTES = 50 * 1024 * 1024   # 50 MB
 
 
 def _detect_file_type(filename: str) -> str:
-    """Return 'csv' | 'xlsx' | 'pdf' | 'txt' | 'unknown' based on extension."""
     ext = Path(filename).suffix.lower()
-    if ext == ".csv":
-        return "csv"
-    if ext in (".xlsx", ".xls"):
-        return "xlsx"
-    if ext == ".pdf":
-        return "pdf"
-    if ext in (".txt", ".md"):
-        return "txt"
+    if ext == ".csv":           return "csv"
+    if ext in (".xlsx", ".xls"): return "xlsx"
+    if ext == ".pdf":            return "pdf"
+    if ext in (".txt", ".md"):   return "txt"
     return "unknown"
 
 
@@ -73,8 +74,9 @@ async def _read_validated(file: UploadFile) -> bytes:
     return file_bytes
 
 
-def _require_session(session_id: str) -> None:
-    if not get_session(session_id):
+def _assert_session_owned_by(session_id: str, user_id: str) -> None:
+    """Same helper as in main.py — 404 (not 403) to avoid leaking existence."""
+    if not session_belongs_to_user(session_id, user_id):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Session {session_id} not found",
@@ -84,9 +86,12 @@ def _require_session(session_id: str) -> None:
 # ── PREVIEW ────────────────────────────────────────────────
 
 @router.post("/sessions/{session_id}/uploads/preview")
-async def preview_upload(session_id: str, file: UploadFile = File(...)):
-    """Inspect an uploaded file without persisting anything."""
-    _require_session(session_id)
+async def preview_upload(
+    session_id:   str,
+    file:         UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+):
+    _assert_session_owned_by(session_id, current_user.user_id)
     file_bytes = await _read_validated(file)
     file_type  = _detect_file_type(file.filename)
 
@@ -127,9 +132,10 @@ async def preview_upload(session_id: str, file: UploadFile = File(...)):
 
 @router.post("/sessions/{session_id}/uploads/ingest")
 async def ingest_upload(
-    session_id: str,
-    file: UploadFile = File(...),
-    metadata: str = Form(default=""),
+    session_id:   str,
+    file:         UploadFile = File(...),
+    metadata:     str = Form(default=""),
+    current_user: User = Depends(get_current_user),
 ):
     """
     Persist an uploaded file into the session's SQLite DB (tabular) or
@@ -143,13 +149,11 @@ async def ingest_upload(
           ...
         }
       }
-    Missing keys fall back to the auto-suggested name.
     """
-    _require_session(session_id)
+    _assert_session_owned_by(session_id, current_user.user_id)
     file_bytes = await _read_validated(file)
     file_type  = _detect_file_type(file.filename)
 
-    # Parse metadata if provided
     meta: dict = {}
     if metadata:
         try:
@@ -174,6 +178,7 @@ async def ingest_upload(
 
         upload_id = create_upload(
             session_id   = session_id,
+            user_id      = current_user.user_id,
             filename     = file.filename,
             file_type    = "csv",
             target       = "sql",
@@ -206,6 +211,7 @@ async def ingest_upload(
 
         upload_id = create_upload(
             session_id   = session_id,
+            user_id      = current_user.user_id,
             filename     = file.filename,
             file_type    = "xlsx",
             target       = "sql",
@@ -221,10 +227,22 @@ async def ingest_upload(
             **result,
         }
 
-    # ── PDF ──  (Phase 3 C3)
+    # ── PDF ──
     if file_type == "pdf":
         try:
-            result = ingest_pdf(file_bytes, file.filename, session_id)
+            # Pass user_id through. document.ingest_pdf() may not yet
+            # consume it (Pass 3 work) — try with the kwarg first,
+            # fall back to the Phase 5a signature if not supported.
+            try:
+                result = ingest_pdf(
+                    file_bytes, file.filename, session_id,
+                    user_id=current_user.user_id,
+                )
+            except TypeError:
+                # ingest_pdf hasn't been updated for Pass 3 yet — use
+                # the existing signature. The upload_id row still gets
+                # user_id, so per-user filtering at the DB layer works.
+                result = ingest_pdf(file_bytes, file.filename, session_id)
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
         except Exception as e:
@@ -232,6 +250,7 @@ async def ingest_upload(
 
         upload_id = create_upload(
             session_id   = session_id,
+            user_id      = current_user.user_id,
             filename     = file.filename,
             file_type    = "pdf",
             target       = "rag",
@@ -263,9 +282,11 @@ async def ingest_upload(
 # ── LIST ───────────────────────────────────────────────────
 
 @router.get("/sessions/{session_id}/uploads")
-async def list_session_uploads(session_id: str):
-    """Return all uploads for a session, newest first."""
-    _require_session(session_id)
+async def list_session_uploads(
+    session_id:   str,
+    current_user: User = Depends(get_current_user),
+):
+    _assert_session_owned_by(session_id, current_user.user_id)
     uploads = list_uploads(session_id)
     return {"session_id": session_id, "uploads": uploads, "count": len(uploads)}
 
@@ -273,13 +294,20 @@ async def list_session_uploads(session_id: str):
 # ── DELETE ─────────────────────────────────────────────────
 
 @router.delete("/uploads/{upload_id}")
-async def delete_upload(upload_id: str):
+async def delete_upload(
+    upload_id:    str,
+    current_user: User = Depends(get_current_user),
+):
     """
     Remove an upload:
-      - 'sql' target → drop the tables from the session DB
-      - 'rag' target → remove vectors from ChromaDB user_uploads collection
+      - verify caller owns the upload (404 otherwise)
+      - 'sql' target → drop tables from session DB
+      - 'rag' target → remove vectors from ChromaDB
       - delete the uploads row
     """
+    if not upload_belongs_to_user(upload_id, current_user.user_id):
+        raise HTTPException(status_code=404, detail=f"Upload {upload_id} not found")
+
     upload = get_upload(upload_id)
     if not upload:
         raise HTTPException(status_code=404, detail=f"Upload {upload_id} not found")

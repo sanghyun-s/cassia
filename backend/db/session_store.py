@@ -11,42 +11,44 @@ Tables:
   messages    — one row per user or assistant turn
   artifacts   — one row per SQL result, citation set, or chart
   uploads     — one row per user-uploaded file (CSV/Excel/PDF/text)
-  users       — one row per user (Phase 4a; single 'default' user for now)
-  core_topics — one row per user-defined topic (Phase 4a)
-  core_saves  — one row per saved message/upload committed to core (Phase 4a)
+  users       — one row per user
+  core_topics — one row per user-defined topic
+  core_saves  — one row per saved message/upload committed to core
 
-Phase 4b-1:
-  - uploads gains a summary_json column (columns + sample rows for tabular,
-    preview text for PDFs) captured at ingest time so core-saves can be rich.
-  - An idempotent ALTER guard adds the column to pre-existing databases.
+Phase history:
+  4b-1: uploads gains summary_json
+  4d:   embeddings live on core_saves; update_save_embedding helper
+  4e:   sessions gains topic_id; update_session_topic helper
+  5a:   migrations added user_id columns to sessions and uploads
+        (via db/auth_migrations.py, not via this module)
+  5b/c: function signatures updated to scope reads/writes by user_id
 
-Phase 4d:
-  - update_save_embedding(save_id, embedding_json) writes the cached vector.
-  - list_saves_needing_embedding(user_id) finds saves with no embedding yet
-    (used by the one-time backfill script).
-  - The embedding_json column itself was provisioned back in 4a, so no
-    schema change here.
+Phase 5b/c additions in this file:
+  - create_session(user_id, title)            — user_id now required
+  - get_all_sessions(user_id)                 — filtered by user
+  - create_upload(session_id, user_id, ...)   — user_id now required
+  - session_belongs_to_user(session_id, ...)  — NEW helper for endpoint checks
+  - upload_belongs_to_user(upload_id, ...)    — NEW helper for endpoint checks
+  - list_uploads_for_user(user_id)            — NEW (cross-session) for user audit
 
-Phase 4e:
-  - sessions gains a topic_id column for the topic-grouped sidebar.
-  - update_session_topic(session_id, topic_id) sets it.
-  - get_all_sessions() returns topic_id so the sidebar can render groups.
-  - delete_topic() explicitly clears sessions.topic_id (the FK works on
-    fresh-created 4e DBs but not on migrated ones via ALTER TABLE).
+Functions that DO NOT change signature (caller does the ownership check):
+  - get_session(session_id)
+  - get_session_with_messages(session_id)
+  - update_session_title(session_id, title)
+  - update_session_topic(session_id, topic_id)
+  - touch_session(session_id)
+  - delete_session(session_id)
+  - save_message(session_id, role, content, ...)
+  - get_session_messages(session_id)
+  - save_artifact(message_id, artifact_type, content)
+  - get_message_artifacts(message_id)
+  - list_uploads(session_id)
+  - get_upload(upload_id)
+  - delete_upload_record(upload_id)
 
-Usage:
-  from db.session_store import (
-      init_db, create_session, get_all_sessions,
-      get_session, save_message, save_artifact,
-      delete_session,
-      create_upload, list_uploads, get_upload, delete_upload_record,
-      ensure_default_user, get_user,
-      create_topic, list_topics, rename_topic, delete_topic,
-      create_save, list_saves, get_save, update_save_topic, archive_save,
-      count_users, count_topics, count_saves,
-      update_save_embedding, list_saves_needing_embedding,   # 4d
-      update_session_topic,                                  # 4e
-  )
+These functions take only the object id and trust the caller. Endpoints
+in main.py and upload_router.py call session_belongs_to_user() or
+upload_belongs_to_user() FIRST, then operate.
 """
 
 import sqlite3
@@ -56,11 +58,10 @@ from pathlib import Path
 from datetime import datetime, timezone
 
 # ── Database path ──────────────────────────────────────────
-# Separate from accounting.db — never mix persistence and demo data
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 DB_PATH      = PROJECT_ROOT / "outputs" / "coreckoner.db"
 
-# The hard-coded single user for Phase 4 (real auth arrives in 4f).
+# Tombstone user id — kept for migration purposes. Real users get usr_<uuid>.
 DEFAULT_USER_ID = "default"
 
 
@@ -68,28 +69,21 @@ def _get_conn() -> sqlite3.Connection:
     """Open a connection with row_factory so rows behave like dicts."""
     conn = sqlite3.connect(str(DB_PATH))
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")   # safe concurrent writes
+    conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
 
 
 def _now() -> str:
-    """ISO 8601 UTC timestamp string."""
     return datetime.now(timezone.utc).isoformat()
 
 
 def _column_exists(conn: sqlite3.Connection, table: str, column: str) -> bool:
-    """Return True if `column` exists on `table`."""
     rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
     return any(r["name"] == column for r in rows)
 
 
 def _ensure_column(conn: sqlite3.Connection, table: str, column: str, decl: str) -> None:
-    """
-    Idempotently add a column to an existing table.
-    CREATE TABLE IF NOT EXISTS does NOT add columns to a table that already
-    exists, so for new columns on pre-existing databases we ALTER here.
-    """
     if not _column_exists(conn, table, column):
         conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
 
@@ -99,8 +93,7 @@ def _ensure_column(conn: sqlite3.Connection, table: str, column: str, decl: str)
 def init_db() -> None:
     """
     Create tables if they do not exist, then run idempotent column
-    migrations for any new columns added in later phases.
-    Called once on FastAPI startup — safe to call repeatedly.
+    migrations for columns added in later phases.
     """
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = _get_conn()
@@ -144,8 +137,6 @@ def init_db() -> None:
                 uploaded_at  TEXT NOT NULL
             );
 
-            -- ── Phase 4a: users / core_topics / core_saves ──────────
-
             CREATE TABLE IF NOT EXISTS users (
                 user_id      TEXT PRIMARY KEY,
                 email        TEXT UNIQUE,
@@ -174,7 +165,7 @@ def init_db() -> None:
                 content           TEXT,
                 metadata_json     TEXT,
                 note              TEXT,
-                embedding_json    TEXT,     -- cached embedding for 4d recall
+                embedding_json    TEXT,
                 created_at        TEXT NOT NULL,
                 archived_at       TEXT
             );
@@ -198,15 +189,9 @@ def init_db() -> None:
                 ON core_topics(user_id);
         """)
 
-        # ── Idempotent column migrations (for pre-existing databases) ──
-        # The uploads table may already exist from before 4b-1 without
-        # summary_json. CREATE TABLE IF NOT EXISTS won't add it — ALTER does.
-        _ensure_column(conn, "uploads", "summary_json", "TEXT")
-        # Phase 4e: sessions gain topic_id for topic-grouped sidebar.
-        # On pre-4e DBs the column is added without a working REFERENCES
-        # constraint (SQLite limitation); delete_topic() explicitly clears
-        # affected rows to compensate.
-        _ensure_column(conn, "sessions", "topic_id", "TEXT")
+        # Idempotent column migrations
+        _ensure_column(conn, "uploads",  "summary_json", "TEXT")
+        _ensure_column(conn, "sessions", "topic_id",     "TEXT")
 
         conn.commit()
     finally:
@@ -215,27 +200,36 @@ def init_db() -> None:
 
 # ── Session CRUD ───────────────────────────────────────────
 
-def create_session(title: str = "New Chat") -> dict:
+def create_session(user_id: str, title: str = "New Chat") -> dict:
     """
     Create a new session row.
-    Returns the full session dict.
+    Phase 5b/c: user_id is now required and stored on the row.
     """
+    if not user_id:
+        raise ValueError("user_id is required to create a session")
+
     session_id = str(uuid.uuid4())
     now        = _now()
     conn       = _get_conn()
     try:
         conn.execute(
-            "INSERT INTO sessions (session_id, title, created_at, updated_at) VALUES (?,?,?,?)",
-            (session_id, title[:80], now, now)
+            """INSERT INTO sessions (session_id, user_id, title, created_at, updated_at)
+               VALUES (?,?,?,?,?)""",
+            (session_id, user_id, title[:80], now, now)
         )
         conn.commit()
-        return {"session_id": session_id, "title": title, "created_at": now, "updated_at": now}
+        return {
+            "session_id": session_id,
+            "user_id":    user_id,
+            "title":      title,
+            "created_at": now,
+            "updated_at": now,
+        }
     finally:
         conn.close()
 
 
 def update_session_title(session_id: str, title: str) -> None:
-    """Set the session title from the first user message."""
     conn = _get_conn()
     try:
         conn.execute(
@@ -248,7 +242,6 @@ def update_session_title(session_id: str, title: str) -> None:
 
 
 def touch_session(session_id: str) -> None:
-    """Update updated_at so sidebar sorts by most recent activity."""
     conn = _get_conn()
     try:
         conn.execute(
@@ -261,11 +254,6 @@ def touch_session(session_id: str) -> None:
 
 
 def update_session_topic(session_id: str, topic_id: str | None) -> bool:
-    """
-    Phase 4e: assign a session to a topic (or to no topic if topic_id is None).
-    Returns True if a row was updated. Also bumps updated_at so the sidebar
-    reflects the change immediately.
-    """
     conn = _get_conn()
     try:
         cur = conn.execute(
@@ -278,15 +266,21 @@ def update_session_topic(session_id: str, topic_id: str | None) -> bool:
         conn.close()
 
 
-def get_all_sessions() -> list[dict]:
+def get_all_sessions(user_id: str) -> list[dict]:
     """
-    Return all sessions ordered by most recently updated.
-    Used for the sidebar list. Phase 4e: includes topic_id for grouping.
+    Return sessions owned by this user, ordered by most recently updated.
+    Phase 5b/c: filtered by user_id (was unfiltered in Phase 4).
     """
+    if not user_id:
+        return []
     conn = _get_conn()
     try:
         rows = conn.execute(
-            "SELECT session_id, title, topic_id, created_at, updated_at FROM sessions ORDER BY updated_at DESC"
+            """SELECT session_id, title, topic_id, created_at, updated_at
+               FROM sessions
+               WHERE user_id = ?
+               ORDER BY updated_at DESC""",
+            (user_id,)
         ).fetchall()
         return [dict(r) for r in rows]
     finally:
@@ -294,7 +288,11 @@ def get_all_sessions() -> list[dict]:
 
 
 def get_session(session_id: str) -> dict | None:
-    """Return session metadata, or None if not found."""
+    """
+    Return session metadata, or None if not found.
+    Does NOT check ownership — callers must call session_belongs_to_user
+    first if access control matters.
+    """
     conn = _get_conn()
     try:
         row = conn.execute(
@@ -305,11 +303,32 @@ def get_session(session_id: str) -> dict | None:
         conn.close()
 
 
+def session_belongs_to_user(session_id: str, user_id: str) -> bool:
+    """
+    Phase 5b/c: cheap ownership check used by every per-session endpoint.
+
+    Returns True only if a row exists matching BOTH the session_id AND
+    the user_id. Used to gate /sessions/{id}, /chat (when a session_id
+    is provided), /sessions/{id}/topic, /sessions/{id}/uploads, etc.
+
+    Callers should treat False as 404 (NOT 403) — revealing "you don't
+    own this session" leaks the fact that the session exists for some
+    other user, which we don't want.
+    """
+    if not session_id or not user_id:
+        return False
+    conn = _get_conn()
+    try:
+        row = conn.execute(
+            "SELECT 1 FROM sessions WHERE session_id=? AND user_id=?",
+            (session_id, user_id)
+        ).fetchone()
+        return row is not None
+    finally:
+        conn.close()
+
+
 def delete_session(session_id: str) -> bool:
-    """
-    Delete session and all child messages and artifacts (CASCADE).
-    Returns True if a row was deleted.
-    """
     conn = _get_conn()
     try:
         cur = conn.execute("DELETE FROM sessions WHERE session_id=?", (session_id,))
@@ -327,10 +346,6 @@ def save_message(
     content:       str,
     pipeline_used: str | None = None,
 ) -> str:
-    """
-    Persist a single message turn.
-    Returns the new message_id.
-    """
     message_id = str(uuid.uuid4())
     conn       = _get_conn()
     try:
@@ -347,7 +362,6 @@ def save_message(
 
 
 def get_session_messages(session_id: str) -> list[dict]:
-    """Return all messages for a session in chronological order."""
     conn = _get_conn()
     try:
         rows = conn.execute(
@@ -367,16 +381,6 @@ def save_artifact(
     artifact_type: str,
     content:       dict | list | str,
 ) -> str:
-    """
-    Persist one artifact attached to an assistant message.
-
-    artifact_type values:
-      sql_query       — the generated SQL string
-      sql_result      — {"columns": [...], "rows": [...]}
-      citations       — list of {page, preview} dicts
-      route_explanation — plain string from query router
-      core_sources    — Phase 4d: list of {title, date, kind, score} saves used
-    """
     artifact_id  = str(uuid.uuid4())
     content_json = json.dumps(content, ensure_ascii=False)
     conn         = _get_conn()
@@ -394,7 +398,6 @@ def save_artifact(
 
 
 def get_message_artifacts(message_id: str) -> list[dict]:
-    """Return all artifacts for a single message."""
     conn = _get_conn()
     try:
         rows = conn.execute(
@@ -417,8 +420,8 @@ def get_message_artifacts(message_id: str) -> list[dict]:
 
 def get_session_with_messages(session_id: str) -> dict | None:
     """
-    Return full session: metadata + messages + artifacts per message.
-    Used by GET /sessions/{session_id} for full thread restore.
+    Return full session + messages + artifacts per message.
+    Does NOT check ownership — caller verifies first.
     """
     session = get_session(session_id)
     if not session:
@@ -436,6 +439,7 @@ def get_session_with_messages(session_id: str) -> dict | None:
 
 def create_upload(
     session_id:   str,
+    user_id:      str,
     filename:     str,
     file_type:    str,
     target:       str,
@@ -446,7 +450,11 @@ def create_upload(
 ) -> str:
     """
     Record a user-uploaded file.
+    Phase 5b/c: user_id is now required and stored on the row.
     """
+    if not user_id:
+        raise ValueError("user_id is required to create an upload")
+
     upload_id = f"upl_{uuid.uuid4().hex[:12]}"
 
     summary_str = None
@@ -458,11 +466,11 @@ def create_upload(
     try:
         conn.execute(
             """INSERT INTO uploads
-               (upload_id, session_id, filename, file_type, target,
+               (upload_id, session_id, user_id, filename, file_type, target,
                 table_names, chunk_count, row_count, summary_json, uploaded_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?)""",
+               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
             (
-                upload_id, session_id, filename, file_type, target,
+                upload_id, session_id, user_id, filename, file_type, target,
                 json.dumps(table_names) if table_names else None,
                 chunk_count, row_count, summary_str, _now()
             )
@@ -474,7 +482,6 @@ def create_upload(
 
 
 def _row_to_upload(row: sqlite3.Row) -> dict:
-    """Convert an uploads row to a dict, parsing JSON fields."""
     d = dict(row)
     d["table_names"] = json.loads(d["table_names"]) if d.get("table_names") else []
     if d.get("summary_json"):
@@ -488,11 +495,14 @@ def _row_to_upload(row: sqlite3.Row) -> dict:
 
 
 def list_uploads(session_id: str) -> list[dict]:
-    """Return all uploads for a session, newest first."""
+    """
+    Return all uploads for a session. Does NOT check ownership —
+    caller (the endpoint) verifies session belongs to user first.
+    """
     conn = _get_conn()
     try:
         rows = conn.execute(
-            """SELECT upload_id, session_id, filename, file_type, target,
+            """SELECT upload_id, session_id, user_id, filename, file_type, target,
                       table_names, chunk_count, row_count, summary_json, uploaded_at
                FROM uploads WHERE session_id=? ORDER BY uploaded_at DESC""",
             (session_id,)
@@ -503,11 +513,10 @@ def list_uploads(session_id: str) -> list[dict]:
 
 
 def get_upload(upload_id: str) -> dict | None:
-    """Fetch a single upload record, or None if not found."""
     conn = _get_conn()
     try:
         row = conn.execute(
-            """SELECT upload_id, session_id, filename, file_type, target,
+            """SELECT upload_id, session_id, user_id, filename, file_type, target,
                       table_names, chunk_count, row_count, summary_json, uploaded_at
                FROM uploads WHERE upload_id=?""",
             (upload_id,)
@@ -519,13 +528,24 @@ def get_upload(upload_id: str) -> dict | None:
         conn.close()
 
 
+def upload_belongs_to_user(upload_id: str, user_id: str) -> bool:
+    """
+    Phase 5b/c: cheap ownership check used by upload-touching endpoints.
+    """
+    if not upload_id or not user_id:
+        return False
+    conn = _get_conn()
+    try:
+        row = conn.execute(
+            "SELECT 1 FROM uploads WHERE upload_id=? AND user_id=?",
+            (upload_id, user_id)
+        ).fetchone()
+        return row is not None
+    finally:
+        conn.close()
+
+
 def delete_upload_record(upload_id: str) -> bool:
-    """
-    Remove the uploads row only.
-    Caller is responsible for dropping tables in the session DB
-    or removing vectors from ChromaDB before calling this.
-    Returns True if a row was deleted.
-    """
     conn = _get_conn()
     try:
         cur = conn.execute("DELETE FROM uploads WHERE upload_id=?", (upload_id,))
@@ -539,13 +559,10 @@ def delete_upload_record(upload_id: str) -> bool:
 # PHASE 4a — Users / Topics / Core Saves
 # =============================================================
 
-# ── Users ──────────────────────────────────────────────────
-
 def ensure_default_user() -> str:
     """
-    Create the hard-coded single user if it doesn't exist.
-    Idempotent — safe to call on every startup.
-    Returns DEFAULT_USER_ID.
+    Create the 'default' tombstone user if it doesn't exist.
+    Kept around for migration purposes — real users get usr_<uuid> ids.
     """
     conn = _get_conn()
     try:
@@ -565,7 +582,6 @@ def ensure_default_user() -> str:
 
 
 def get_user(user_id: str) -> dict | None:
-    """Return user row, or None if not found."""
     conn = _get_conn()
     try:
         row = conn.execute(
@@ -579,10 +595,6 @@ def get_user(user_id: str) -> dict | None:
 # ── Topics ─────────────────────────────────────────────────
 
 def create_topic(user_id: str, name: str) -> str:
-    """
-    Create a topic for a user. Topic names are unique per user.
-    If the topic already exists, returns the existing topic_id.
-    """
     name = (name or "").strip()
     if not name:
         raise ValueError("Topic name cannot be empty")
@@ -608,10 +620,6 @@ def create_topic(user_id: str, name: str) -> str:
 
 
 def list_topics(user_id: str) -> list[dict]:
-    """
-    Return all topics for a user, with a save_count per topic.
-    Ordered alphabetically by name.
-    """
     conn = _get_conn()
     try:
         rows = conn.execute(
@@ -631,7 +639,6 @@ def list_topics(user_id: str) -> list[dict]:
 
 
 def rename_topic(topic_id: str, new_name: str) -> bool:
-    """Rename a topic. Returns True if a row was updated."""
     new_name = (new_name or "").strip()
     if not new_name:
         raise ValueError("Topic name cannot be empty")
@@ -647,17 +654,25 @@ def rename_topic(topic_id: str, new_name: str) -> bool:
         conn.close()
 
 
+def topic_belongs_to_user(topic_id: str, user_id: str) -> bool:
+    """Phase 5b/c: ownership check used before rename/delete."""
+    if not topic_id or not user_id:
+        return False
+    conn = _get_conn()
+    try:
+        row = conn.execute(
+            "SELECT 1 FROM core_topics WHERE topic_id=? AND user_id=?",
+            (topic_id, user_id)
+        ).fetchone()
+        return row is not None
+    finally:
+        conn.close()
+
+
 def delete_topic(topic_id: str) -> bool:
     """
-    Delete a topic. Saves keep their data but lose the topic
-    (topic_id set to NULL via ON DELETE SET NULL on core_saves).
-
-    Phase 4e: also clears topic_id from any sessions that referenced it.
-    For DBs created fresh with 4e, sessions has an ON DELETE SET NULL FK,
-    but for migrated DBs (column added via ALTER) the FK doesn't take
-    effect — clearing explicitly here covers both cases.
-
-    Returns True if a row was deleted.
+    Delete a topic. Saves keep their data but lose the topic.
+    Also clears topic_id from any sessions that referenced it.
     """
     conn = _get_conn()
     try:
@@ -675,7 +690,7 @@ def delete_topic(topic_id: str) -> bool:
 
 def create_save(
     user_id:           str,
-    kind:              str,                 # 'message' | 'upload'
+    kind:              str,
     title:             str | None = None,
     content:           str | None = None,
     metadata_json:     dict | list | str | None = None,
@@ -685,21 +700,11 @@ def create_save(
     source_message_id: str | None = None,
     source_upload_id:  str | None = None,
 ) -> str:
-    """
-    Commit a message or upload to the user's core.
-
-    Idempotency: if a save already exists for the same source
-    (message_id or upload_id) and user, returns the existing save_id
-    instead of creating a duplicate.
-
-    Returns the save_id.
-    """
     if kind not in ("message", "upload"):
         raise ValueError("kind must be 'message' or 'upload'")
 
     conn = _get_conn()
     try:
-        # Idempotency check
         if kind == "message" and source_message_id:
             existing = conn.execute(
                 """SELECT save_id FROM core_saves
@@ -744,7 +749,6 @@ def create_save(
 
 
 def _row_to_save(row: sqlite3.Row) -> dict:
-    """Convert a core_saves row to a dict, parsing JSON fields."""
     d = dict(row)
     if d.get("metadata_json"):
         try:
@@ -758,11 +762,6 @@ def _row_to_save(row: sqlite3.Row) -> dict:
 
 def list_saves(user_id: str, topic_id: str | None = None,
                include_archived: bool = False) -> list[dict]:
-    """
-    Return saves for a user, newest first.
-    Optionally filter by topic_id. Archived saves excluded by default.
-    Pass topic_id='__none__' to get only untopiced saves.
-    """
     conn = _get_conn()
     try:
         clauses = ["user_id=?"]
@@ -794,7 +793,6 @@ def list_saves(user_id: str, topic_id: str | None = None,
 
 
 def get_save(save_id: str) -> dict | None:
-    """Return a single save (including embedding_json), or None."""
     conn = _get_conn()
     try:
         row = conn.execute(
@@ -805,12 +803,23 @@ def get_save(save_id: str) -> dict | None:
         conn.close()
 
 
+def save_belongs_to_user(save_id: str, user_id: str) -> bool:
+    """Phase 5b/c: ownership check used before save move/archive."""
+    if not save_id or not user_id:
+        return False
+    conn = _get_conn()
+    try:
+        row = conn.execute(
+            "SELECT 1 FROM core_saves WHERE save_id=? AND user_id=?",
+            (save_id, user_id)
+        ).fetchone()
+        return row is not None
+    finally:
+        conn.close()
+
+
 def update_save_topic(save_id: str, topic_id: str | None,
                       note: str | None = None) -> bool:
-    """
-    Move a save to a topic (or to no topic if topic_id is None),
-    and optionally update its note. Returns True if updated.
-    """
     conn = _get_conn()
     try:
         if note is not None:
@@ -830,7 +839,6 @@ def update_save_topic(save_id: str, topic_id: str | None,
 
 
 def archive_save(save_id: str) -> bool:
-    """Soft-delete a save (sets archived_at). Returns True if updated."""
     conn = _get_conn()
     try:
         cur = conn.execute(
@@ -845,10 +853,6 @@ def archive_save(save_id: str) -> bool:
 
 def find_save_by_source(user_id: str, source_message_id: str | None = None,
                         source_upload_id: str | None = None) -> dict | None:
-    """
-    Look up an active save by its source. Used by the frontend to render
-    the 'already saved' (filled) state on the 💾 button.
-    """
     conn = _get_conn()
     try:
         if source_message_id:
@@ -873,11 +877,6 @@ def find_save_by_source(user_id: str, source_message_id: str | None = None,
 # ── Phase 4d: embedding I/O ────────────────────────────────
 
 def update_save_embedding(save_id: str, embedding_json: str) -> bool:
-    """
-    Cache the vector for a save. Called by main.py at save time (embed-on-save)
-    and by the one-time backfill script for pre-4d saves.
-    embedding_json is expected to be a JSON-serialized list of floats.
-    """
     if not embedding_json:
         return False
     conn = _get_conn()
@@ -893,10 +892,6 @@ def update_save_embedding(save_id: str, embedding_json: str) -> bool:
 
 
 def list_saves_needing_embedding(user_id: str) -> list[dict]:
-    """
-    Return active saves for a user that don't yet have an embedding.
-    Used by scripts/backfill_save_embeddings.py.
-    """
     conn = _get_conn()
     try:
         rows = conn.execute(

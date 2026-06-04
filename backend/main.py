@@ -1,58 +1,54 @@
 """
 =============================================================
-CoReckoner — FastAPI Backend  (Phase 4e: topic-grouped sessions)
+CASSIA — FastAPI Backend  (Phase 5b/c: auth-required everywhere)
 =============================================================
 
-Phase 4d (natural-language recall):
-  - Router learns a 4th route: 'core_recall' (triggers + LLM + fall-through)
-  - pipelines/core_recall_pipeline.py does cosine similarity over saves
-  - pipelines/core_embed.py provides embed_text + cosine_similarity
-  - core_saves are embedded at save time (call into core_embed in /core/save)
-  - When core_recall returns no match, /chat falls through to the normal
-    pipeline AND surfaces a visible "no recall match" banner via the
-    `core_fallthrough_note` artifact.
+Project rebrand:
+  CoReckoner → CASSIA (Chat-based Accounting System for SQL, Search,
+  Insight & Analysis). Backend identifier (db filename, cookie name)
+  stays as coreckoner.db / cassia_session respectively.
 
-v2.9.1 — auto session titles:
-  - After the first user+assistant exchange in a session, a small LLM call
-    generates a 3-6 word title in the user's language (English or Korean).
-  - Set-once on first exchange only; manual rename still overrides.
+v2.11.0 — Phase 5b/c (this version):
+  - Every user-data endpoint now requires authentication via
+    get_current_user. Unauthenticated requests return 401.
+  - CURRENT_USER_ID global removed; user_id flows from the request
+    cookie through to every persistence call.
+  - Ownership checks: every per-session, per-upload, per-topic, per-save
+    endpoint calls a small _assert_*_owned_by helper that returns 404
+    (NOT 403) when the resource doesn't belong to the caller. 404
+    prevents leaking the existence of resources owned by other users.
+  - CORS hardened: allow_origins=["http://localhost:8002"],
+    allow_credentials=True. Cookie auth requires explicit origin —
+    wildcard origins reject credentialed requests.
+  - Bcrypt "trapped error reading bcrypt version" startup warning
+    silenced via a one-line passlib log filter. Cosmetic only;
+    functionality is unaffected.
+  - Banner bumped to v2.11.0.
 
-v2.10.0 — Phase 4e: topic-grouped sessions:
-  - sessions can be assigned to a topic (shared namespace with 4c core saves).
-  - New endpoint: PATCH /sessions/{id}/topic — set or clear a session's topic.
-  - get_all_sessions() returns topic_id so the sidebar can render groups.
-  - Smoother default in /core/save: a save inherits its source session's
-    topic_id automatically, so the user doesn't have to re-sort saves
-    that came from an already-organized session.
-  - No in-chat header dropdown — topic assignment lives only in the sidebar
-    (inline hover menu on each session row).
+Previous v2.10.1 highlights kept intact:
+  - Phase 4d core recall, Phase 4e topic-grouped sessions,
+    auto-titles, chart fix.
 
-v2.10.1 — chart fix:
-  - Chart-type inference + row reordering moved to pipelines/chart_builder.py.
-  - Fixed: "Show revenue by service line as a bar chart" used to render as
-    a line chart because the substring "line" matched "service LINE"
-    before the explicit "bar chart" phrase was checked. Now phrase-matching
-    runs first.
-  - Defensive reorder for bar charts: data table and chart now always show
-    rows DESC by the numeric column, regardless of whether the LLM included
-    ORDER BY in its SQL.
-
-ChatResponse gains (4d, unchanged):
-  core_recall_attempted : bool
-  core_recall_matched   : bool
-  core_fallthrough_note : str
-  core_sources          : list
+This file is the largest single edit in Phase 5b/c — the auth
+dependency lands on ~17 endpoints. Routes that DON'T require auth:
+  - GET /            (serves the HTML; HTML drives the login flow)
+  - GET /health      (status probe)
+  - GET /schema      (read-only accounting demo schema)
+  - GET /stats       (read-only diagnostic counts)
+  - All /auth/*      (login endpoints themselves)
+  - /static/*        (CSS/JS assets)
 """
 
 import os
 import json
+import logging
 import sqlite3
 from pathlib import Path
 from datetime import datetime
 from typing import Optional
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -61,16 +57,17 @@ from dotenv import load_dotenv
 
 from langchain_openai import ChatOpenAI
 
-from routers.query_router import classify_question
+from auth import User, get_current_user
+from routers.query_router  import classify_question
 from routers.upload_router import router as upload_router
-from routers.auth_router  import router as auth_router
+from routers.auth_router   import router as auth_router
 
 from db.auth_migrations import migrate as auth_migrate
-from pipelines.sql_pipeline import run_sql_pipeline, get_db_connection, get_schema
-from pipelines.rag_pipeline import run_rag_pipeline
+from pipelines.sql_pipeline         import run_sql_pipeline, get_db_connection, get_schema
+from pipelines.rag_pipeline         import run_rag_pipeline
 from pipelines.core_recall_pipeline import run_core_recall_pipeline
-from pipelines.core_embed import embed_text
-from pipelines.chart_builder import build_chart_spec
+from pipelines.core_embed           import embed_text
+from pipelines.chart_builder        import build_chart_spec
 
 from db.session_store import (
     init_db,
@@ -84,19 +81,21 @@ from db.session_store import (
     update_session_title,
     touch_session,
     update_session_topic,
+    session_belongs_to_user,
+    upload_belongs_to_user,
+    topic_belongs_to_user,
+    save_belongs_to_user,
     ensure_default_user,
     count_users,
     count_topics,
     count_saves,
     DEFAULT_USER_ID,
-    # Phase 4b-2
     get_session_messages,
     get_message_artifacts,
     get_upload,
     create_save,
     get_save,
     find_save_by_source,
-    # Phase 4c
     create_topic,
     list_topics,
     rename_topic,
@@ -104,7 +103,6 @@ from db.session_store import (
     list_saves,
     update_save_topic,
     archive_save,
-    # Phase 4d
     update_save_embedding,
     list_saves_needing_embedding,
 )
@@ -113,21 +111,24 @@ from uploads.document   import delete_session_vectors
 
 load_dotenv()
 
+# ── Silence the cosmetic bcrypt-version warning at startup ──
+# bcrypt 5.x removed __about__ which passlib 1.7.4 reads. The error is
+# caught and re-raised as a log message — functionality is fine. We
+# raise passlib's log level to ERROR so the trapped-version line stops
+# printing on every server boot.
+logging.getLogger("passlib").setLevel(logging.ERROR)
+
+
 PROJECT_ROOT = Path(__file__).parent.parent
 DB_PATH      = PROJECT_ROOT / "outputs" / "accounting.db"
 CHROMA_DIR   = PROJECT_ROOT / "outputs" / "chroma_db"
 
-# Set on startup by ensure_default_user(). Phase 4 uses this single user
-# until real auth lands in 4f.
-CURRENT_USER_ID = DEFAULT_USER_ID
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global CURRENT_USER_ID
     print("\n" + "═" * 52)
-    print("  CoReckoner — Accounting AI Chatbot")
-    print("  v2.10.1 · Phase 4e + chart fix")
+    print("  CASSIA — Accounting AI Chatbot")
+    print("  v2.11.0 · Phase 5b/c (auth-required)")
     print("═" * 52)
     try:
         init_db()
@@ -142,8 +143,8 @@ async def lifespan(app: FastAPI):
         print(f"  ⚠ auth migrations failed: {e}")
 
     try:
-        CURRENT_USER_ID = ensure_default_user()
-        print(f"  ✓ default user ensured ({CURRENT_USER_ID})")
+        ensure_default_user()
+        print(f"  ✓ default user ensured (tombstone)")
     except Exception as e:
         print(f"  ⚠ ensure_default_user failed: {e}")
 
@@ -152,38 +153,40 @@ async def lifespan(app: FastAPI):
     else:
         print("  ✓ OpenAI API key loaded")
 
-    print(f"  {'✓' if DB_PATH.exists() else '⚠'} accounting.db  {'found' if DB_PATH.exists() else 'NOT found'}")
-    print(f"  {'✓' if CHROMA_DIR.exists() else '⚠'} chroma_db     {'found' if CHROMA_DIR.exists() else 'NOT found'}")
+    if not os.getenv("SIGNUP_INVITE_CODE"):
+        print("  ⚠ SIGNUP_INVITE_CODE not set — signup will be disabled")
+    else:
+        print("  ✓ Invite code configured")
 
-    # Phase 4d: warn if any saves still lack embeddings
-    try:
-        unembedded = list_saves_needing_embedding(CURRENT_USER_ID)
-        if unembedded:
-            print(f"  ⚠ {len(unembedded)} core save(s) missing embeddings — "
-                  f"run: python3 backend/scripts/backfill_save_embeddings.py")
-    except Exception as e:
-        print(f"  ⚠ embedding-check failed: {e}")
+    print(f"  {'✓' if DB_PATH.exists()    else '⚠'} accounting.db  {'found' if DB_PATH.exists()    else 'NOT found'}")
+    print(f"  {'✓' if CHROMA_DIR.exists() else '⚠'} chroma_db     {'found' if CHROMA_DIR.exists() else 'NOT found'}")
 
     print("═" * 52)
     print("  Chat UI:  http://localhost:8002")
     print("  API docs: http://localhost:8002/docs")
     print("═" * 52 + "\n")
     yield
-    print("\nShutting down CoReckoner.")
+    print("\nShutting down CASSIA.")
 
 
 app = FastAPI(
-    title="CoReckoner — Accounting AI Chatbot",
-    description="Hybrid RAG + Text-to-SQL with persistent sessions, uploads, core recall, auto-titles, topic-grouped sidebar",
-    version="2.10.1",
-    lifespan=lifespan,
+    title       = "CASSIA — Accounting AI Chatbot",
+    description = "Hybrid RAG + Text-to-SQL with persistent sessions, uploads, core recall, multi-user auth",
+    version     = "2.11.0",
+    lifespan    = lifespan,
 )
 
+# ── CORS — Phase 5b/c hardened ──────────────────────────────
+# Cookie-based auth requires:
+#   - allow_credentials=True  (so browser sends our HttpOnly cookie)
+#   - allow_origins to be an explicit list (NOT "*") because browsers
+#     refuse to send credentials to wildcard origins.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins     = ["http://localhost:8002"],
+    allow_credentials = True,
+    allow_methods     = ["*"],
+    allow_headers     = ["*"],
 )
 
 app.include_router(upload_router)
@@ -214,7 +217,6 @@ class ChatResponse(BaseModel):
     raw_data:          Optional[list] = None
     columns:           Optional[list] = None
     sources:           Optional[list] = None
-    # Phase 4d additions:
     core_recall_attempted: bool          = False
     core_recall_matched:   bool          = False
     core_fallthrough_note: Optional[str] = None
@@ -227,7 +229,6 @@ class SessionRenameRequest(BaseModel):
 
 
 class SessionTopicRequest(BaseModel):
-    """Phase 4e: assign or clear a session's topic."""
     topic_id:    Optional[str] = None
     clear_topic: bool          = False
 
@@ -247,10 +248,36 @@ class TopicRenameRequest(BaseModel):
 
 
 class SaveUpdateRequest(BaseModel):
-    topic_id: Optional[str] = None
-    note:     Optional[str] = None
-    clear_topic: bool = False
+    topic_id:    Optional[str] = None
+    note:        Optional[str] = None
+    clear_topic: bool          = False
 
+
+# ── Ownership-check helpers ────────────────────────────────
+# Each one raises 404 on mismatch — 404 (not 403) so the caller cannot
+# discover whether a resource exists for some other user.
+
+def _assert_session_owned_by(session_id: str, user_id: str) -> None:
+    if not session_belongs_to_user(session_id, user_id):
+        raise HTTPException(status_code=404, detail="Session not found")
+
+
+def _assert_upload_owned_by(upload_id: str, user_id: str) -> None:
+    if not upload_belongs_to_user(upload_id, user_id):
+        raise HTTPException(status_code=404, detail="Upload not found")
+
+
+def _assert_topic_owned_by(topic_id: str, user_id: str) -> None:
+    if not topic_belongs_to_user(topic_id, user_id):
+        raise HTTPException(status_code=404, detail="Topic not found")
+
+
+def _assert_save_owned_by(save_id: str, user_id: str) -> None:
+    if not save_belongs_to_user(save_id, user_id):
+        raise HTTPException(status_code=404, detail="Save not found")
+
+
+# ── Misc helpers ───────────────────────────────────────────
 
 def get_llm() -> ChatOpenAI:
     api_key = os.getenv("OPENAI_API_KEY")
@@ -284,9 +311,6 @@ def _try_touch(session_id) -> None:
 
 
 def _try_embed_save(save_id: str, text: str) -> None:
-    """
-    Phase 4d: embed a save and cache its vector. Best-effort.
-    """
     if not save_id or not text:
         return
     try:
@@ -298,11 +322,6 @@ def _try_embed_save(save_id: str, text: str) -> None:
 
 
 def _inherit_session_topic(source_session_id: str | None) -> str | None:
-    """
-    Phase 4e: if the save's source session has a topic assigned, inherit it.
-    Returns the topic_id or None. Best-effort — any failure returns None
-    and the save lands in Unsorted (the pre-4e default).
-    """
     if not source_session_id:
         return None
     try:
@@ -314,7 +333,7 @@ def _inherit_session_topic(source_session_id: str | None) -> str | None:
     return None
 
 
-# ── Auto session titles (v2.9.1) ───────────────────────────
+# ── Auto session titles ────────────────────────────────────
 
 TITLE_GEN_PROMPT = (
     "Generate a brief, descriptive title for this accounting chat conversation.\n"
@@ -333,11 +352,6 @@ TITLE_GEN_PROMPT = (
 
 def _try_generate_session_title(session_id: str, question: str,
                                  answer: str, llm: ChatOpenAI) -> None:
-    """
-    Generate a short, language-matched session title via a small LLM call.
-    Best-effort — failure leaves whatever placeholder is currently set.
-    Fires only on a session's first exchange; never auto-regenerates.
-    """
     if not session_id or not question:
         return
     try:
@@ -347,10 +361,8 @@ def _try_generate_session_title(session_id: str, question: str,
         )
         resp = llm.invoke(prompt)
         title = (resp.content or "").strip()
-        # Sanitize: strip enclosing quotes, trailing punctuation
         title = title.strip('"\'`').strip()
         title = title.rstrip(".!?,;: ")
-        # Sanity guards: keep within DB column constraint, never write empty
         if not title or len(title) > 80:
             return
         update_session_title(session_id, title)
@@ -361,7 +373,10 @@ def _try_generate_session_title(session_id: str, question: str,
 # ── CHAT ENDPOINT ──────────────────────────────────────────
 
 @app.post("/chat", response_model=ChatResponse)
-async def chat(request: ChatRequest):
+async def chat(
+    request:      ChatRequest,
+    current_user: User = Depends(get_current_user),
+):
     question = request.question.strip()
     if not question:
         raise HTTPException(status_code=400, detail="Question cannot be empty")
@@ -371,19 +386,20 @@ async def chat(request: ChatRequest):
 
     session_id = request.session_id
 
-    # Validate any incoming session_id; treat as fresh if not found
+    # Validate any incoming session_id: must exist AND be owned by caller.
+    # If either check fails, we treat it as a fresh session — same external
+    # behavior as v2.10.1 but with ownership enforced.
     if session_id:
         try:
-            if not get_session(session_id):
+            if not session_belongs_to_user(session_id, current_user.user_id):
                 session_id = None
         except Exception:
             session_id = None
 
-    # Create a session inline if we still don't have one
     session_was_just_created = False
     if not session_id:
         try:
-            sess       = create_session(title=question[:80])
+            sess       = create_session(user_id=current_user.user_id, title=question[:80])
             session_id = sess["session_id"]
             session_was_just_created = True
         except Exception:
@@ -391,11 +407,6 @@ async def chat(request: ChatRequest):
             session_id = str(uuid.uuid4())
             session_was_just_created = True
 
-    # ── Detect "first exchange" (for auto-title generation) ──
-    # True if we just created the session inline, OR if the session existed
-    # (e.g., from POST /sessions) but had no prior messages. This catches
-    # the "+ New Chat" → first-message path that previously left titles
-    # stuck on "New Chat".
     is_first_exchange = session_was_just_created
     if not is_first_exchange:
         try:
@@ -406,7 +417,6 @@ async def chat(request: ChatRequest):
 
     _try_save_message(session_id, "user", question)
 
-    # Phase 4 warm-up: pass session_id so the router knows about uploaded PDFs
     route_result = classify_question(question, llm, session_id=session_id)
     route        = route_result["route"]
 
@@ -418,18 +428,16 @@ async def chat(request: ChatRequest):
     response_type = "answer"
     chart_hint    = "none"
 
-    # Phase 4d state — surfaced in ChatResponse
     core_attempted = False
     core_matched   = False
     core_fallnote  = None
     core_sources   = None
 
     try:
-        # ── Phase 4d: try core_recall first if routed there ──
         if route == "core_recall":
             core_attempted = True
             core_result    = run_core_recall_pipeline(
-                question, llm, user_id=CURRENT_USER_ID
+                question, llm, user_id=current_user.user_id
             )
 
             if core_result.get("matched"):
@@ -439,7 +447,6 @@ async def chat(request: ChatRequest):
                 pipeline_used = "core_recall"
                 response_type = core_result.get("response_type", "answer")
             else:
-                # Fall through to normal classification (sql/rag/both)
                 core_fallnote = core_result.get("answer") or (
                     "Nothing in your saved core matched this — answering live instead."
                 )
@@ -457,7 +464,6 @@ async def chat(request: ChatRequest):
                 route = fallback_route.value if hasattr(fallback_route, "value") else fallback_route
                 pipeline_used = f"core_recall→{route}"
 
-        # ── Standard pipelines ──
         if route in ("sql", "both"):
             sql_result = run_sql_pipeline(question, llm, DB_PATH, session_id=session_id)
             response_type = sql_result.get("response_type", "answer")
@@ -515,7 +521,6 @@ async def chat(request: ChatRequest):
                 question   = question,
                 chart_hint = chart_hint,
             ))
-        # Phase 4d artifacts
         if core_sources:
             _try_save_artifact(asst_msg_id, "core_sources", core_sources)
         if core_fallnote:
@@ -523,10 +528,6 @@ async def chat(request: ChatRequest):
 
     _try_touch(session_id)
 
-    # ── Auto session title (v2.9.1) ──
-    # Fires AFTER the first exchange completes. Sets a safety-net placeholder
-    # from the question, then upgrades to a clean LLM-summarized title.
-    # Best-effort: either step can fail without breaking the chat.
     if is_first_exchange:
         try:
             update_session_title(session_id, question[:80])
@@ -558,24 +559,28 @@ async def chat(request: ChatRequest):
 # ── SESSION ENDPOINTS ──────────────────────────────────────
 
 @app.get("/sessions")
-async def list_sessions():
+async def list_sessions(current_user: User = Depends(get_current_user)):
     try:
-        sessions = get_all_sessions()
+        sessions = get_all_sessions(current_user.user_id)
         return {"sessions": sessions, "count": len(sessions)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/sessions")
-async def new_session():
+async def new_session(current_user: User = Depends(get_current_user)):
     try:
-        return create_session(title="New Chat")
+        return create_session(user_id=current_user.user_id, title="New Chat")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/sessions/{session_id}")
-async def get_full_session(session_id: str):
+async def get_full_session(
+    session_id:   str,
+    current_user: User = Depends(get_current_user),
+):
+    _assert_session_owned_by(session_id, current_user.user_id)
     try:
         session = get_session_with_messages(session_id)
     except Exception as e:
@@ -586,38 +591,36 @@ async def get_full_session(session_id: str):
 
 
 @app.patch("/sessions/{session_id}")
-async def rename_session(session_id: str, body: SessionRenameRequest):
+async def rename_session(
+    session_id:   str,
+    body:         SessionRenameRequest,
+    current_user: User = Depends(get_current_user),
+):
     if not body.title or not body.title.strip():
         raise HTTPException(status_code=400, detail="Title cannot be empty")
+    _assert_session_owned_by(session_id, current_user.user_id)
     try:
-        existing = get_session(session_id)
-        if not existing:
-            raise HTTPException(status_code=404, detail="Session not found")
         update_session_title(session_id, body.title.strip())
         return {"session_id": session_id, "title": body.title.strip()}
-    except HTTPException:
-        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.patch("/sessions/{session_id}/topic")
-async def set_session_topic(session_id: str, body: SessionTopicRequest):
-    """
-    Phase 4e: assign a session to a topic, or move it to Unsorted.
-
-    Body forms:
-      {"topic_id": "top_abc..."}    → assign to that topic
-      {"topic_id": "__none__"}      → move to Unsorted
-      {"clear_topic": true}         → move to Unsorted (alias)
-    """
-    existing = get_session(session_id)
-    if not existing:
-        raise HTTPException(status_code=404, detail="Session not found")
+async def set_session_topic(
+    session_id:   str,
+    body:         SessionTopicRequest,
+    current_user: User = Depends(get_current_user),
+):
+    _assert_session_owned_by(session_id, current_user.user_id)
 
     target = body.topic_id
     if body.clear_topic or target in ("", "__none__"):
         target = None
+
+    # If assigning to a topic, verify the topic also belongs to this user
+    if target is not None:
+        _assert_topic_owned_by(target, current_user.user_id)
 
     try:
         ok = update_session_topic(session_id, target)
@@ -631,7 +634,11 @@ async def set_session_topic(session_id: str, body: SessionTopicRequest):
 
 
 @app.delete("/sessions/{session_id}")
-async def remove_session(session_id: str):
+async def remove_session(
+    session_id:   str,
+    current_user: User = Depends(get_current_user),
+):
+    _assert_session_owned_by(session_id, current_user.user_id)
     try:
         deleted = delete_session(session_id)
     except Exception as e:
@@ -654,9 +661,14 @@ async def remove_session(session_id: str):
     return {"status": "deleted", "session_id": session_id}
 
 
-# ── CORE SAVE ENDPOINTS (Phase 4b-2) ───────────────────────
+# ── CORE SAVE ENDPOINTS ────────────────────────────────────
 
-def _build_message_snapshot(message_id: str) -> dict:
+def _build_message_snapshot(message_id: str, user_id: str) -> dict:
+    """
+    Build a snapshot for saving a message. Verifies that the source
+    message lives in a session owned by the caller — prevents user A
+    from saving user B's message content into their own core.
+    """
     from db.session_store import _get_conn
     conn = _get_conn()
     try:
@@ -671,8 +683,12 @@ def _build_message_snapshot(message_id: str) -> dict:
         raise HTTPException(status_code=404, detail=f"Message {message_id} not found")
 
     msg = dict(row)
-    artifacts = get_message_artifacts(message_id)
 
+    # Ownership check via session
+    if not session_belongs_to_user(msg["session_id"], user_id):
+        raise HTTPException(status_code=404, detail=f"Message {message_id} not found")
+
+    artifacts = get_message_artifacts(message_id)
     meta: dict = {"pipeline": msg.get("pipeline_used")}
     for a in artifacts:
         meta[a["artifact_type"]] = a.get("content")
@@ -688,9 +704,16 @@ def _build_message_snapshot(message_id: str) -> dict:
     }
 
 
-def _build_upload_snapshot(upload_id: str) -> dict:
+def _build_upload_snapshot(upload_id: str, user_id: str) -> dict:
+    """
+    Build a snapshot for saving an upload. Verifies the upload belongs
+    to the caller.
+    """
     up = get_upload(upload_id)
     if not up:
+        raise HTTPException(status_code=404, detail=f"Upload {upload_id} not found")
+
+    if up.get("user_id") != user_id:
         raise HTTPException(status_code=404, detail=f"Upload {upload_id} not found")
 
     filename = up.get("filename", "(file)")
@@ -726,7 +749,10 @@ def _build_upload_snapshot(upload_id: str) -> dict:
 
 
 @app.post("/core/save")
-async def core_save(body: CoreSaveRequest):
+async def core_save(
+    body:         CoreSaveRequest,
+    current_user: User = Depends(get_current_user),
+):
     kind = (body.kind or "").strip()
     if kind not in ("message", "upload"):
         raise HTTPException(status_code=400, detail="kind must be 'message' or 'upload'")
@@ -734,12 +760,11 @@ async def core_save(body: CoreSaveRequest):
         raise HTTPException(status_code=400, detail="source_id is required")
 
     if kind == "message":
-        snap = _build_message_snapshot(body.source_id)
-        # Phase 4e: inherit the session's topic if it has one assigned
+        snap = _build_message_snapshot(body.source_id, current_user.user_id)
         inherited_topic = _inherit_session_topic(snap.get("source_session_id"))
         try:
             save_id = create_save(
-                user_id           = CURRENT_USER_ID,
+                user_id           = current_user.user_id,
                 kind              = "message",
                 title             = snap["title"],
                 content           = snap["content"],
@@ -752,12 +777,11 @@ async def core_save(body: CoreSaveRequest):
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Save failed: {e}")
     else:
-        snap = _build_upload_snapshot(body.source_id)
-        # Phase 4e: inherit the session's topic for uploads too
+        snap = _build_upload_snapshot(body.source_id, current_user.user_id)
         inherited_topic = _inherit_session_topic(snap.get("source_session_id"))
         try:
             save_id = create_save(
-                user_id           = CURRENT_USER_ID,
+                user_id           = current_user.user_id,
                 kind              = "upload",
                 title             = snap["title"],
                 content           = snap["content"],
@@ -784,15 +808,18 @@ async def core_save(body: CoreSaveRequest):
 
 
 @app.get("/core/saves")
-async def core_saves(source_message_id: Optional[str] = None,
-                     source_upload_id:  Optional[str] = None):
+async def core_saves(
+    source_message_id: Optional[str] = None,
+    source_upload_id:  Optional[str] = None,
+    current_user:      User = Depends(get_current_user),
+):
     if not source_message_id and not source_upload_id:
         raise HTTPException(
             status_code=400,
             detail="Provide source_message_id or source_upload_id",
         )
     found = find_save_by_source(
-        CURRENT_USER_ID,
+        current_user.user_id,
         source_message_id=source_message_id,
         source_upload_id=source_upload_id,
     )
@@ -802,23 +829,24 @@ async def core_saves(source_message_id: Optional[str] = None,
     }
 
 
-# ── CORE TOPIC / DATA ENDPOINTS (Phase 4c) ─────────────────
+# ── CORE TOPIC / DATA ENDPOINTS ────────────────────────────
 
 @app.get("/core/topics")
-async def core_list_topics():
+async def core_list_topics(current_user: User = Depends(get_current_user)):
     try:
-        topics = list_topics(CURRENT_USER_ID)
+        topics = list_topics(current_user.user_id)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
     try:
-        unsorted = list_saves(CURRENT_USER_ID, topic_id="__none__")
+        unsorted = list_saves(current_user.user_id, topic_id="__none__")
         unsorted_count = len(unsorted)
     except Exception:
         unsorted_count = 0
 
     try:
-        total = count_saves()
+        all_saves = list_saves(current_user.user_id)
+        total = len(all_saves)
     except Exception:
         total = 0
 
@@ -830,22 +858,30 @@ async def core_list_topics():
 
 
 @app.post("/core/topics")
-async def core_create_topic(body: TopicCreateRequest):
+async def core_create_topic(
+    body:         TopicCreateRequest,
+    current_user: User = Depends(get_current_user),
+):
     name = (body.name or "").strip()
     if not name:
         raise HTTPException(status_code=400, detail="Topic name cannot be empty")
     try:
-        topic_id = create_topic(CURRENT_USER_ID, name)
+        topic_id = create_topic(current_user.user_id, name)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     return {"status": "created", "topic_id": topic_id, "name": name}
 
 
 @app.patch("/core/topics/{topic_id}")
-async def core_rename_topic(topic_id: str, body: TopicRenameRequest):
+async def core_rename_topic(
+    topic_id:     str,
+    body:         TopicRenameRequest,
+    current_user: User = Depends(get_current_user),
+):
     name = (body.name or "").strip()
     if not name:
         raise HTTPException(status_code=400, detail="Topic name cannot be empty")
+    _assert_topic_owned_by(topic_id, current_user.user_id)
     try:
         ok = rename_topic(topic_id, name)
     except Exception as e:
@@ -856,7 +892,11 @@ async def core_rename_topic(topic_id: str, body: TopicRenameRequest):
 
 
 @app.delete("/core/topics/{topic_id}")
-async def core_delete_topic(topic_id: str):
+async def core_delete_topic(
+    topic_id:     str,
+    current_user: User = Depends(get_current_user),
+):
+    _assert_topic_owned_by(topic_id, current_user.user_id)
     try:
         ok = delete_topic(topic_id)
     except Exception as e:
@@ -867,16 +907,24 @@ async def core_delete_topic(topic_id: str):
 
 
 @app.get("/core/saves/list")
-async def core_saves_list(topic_id: Optional[str] = None):
+async def core_saves_list(
+    topic_id:     Optional[str] = None,
+    current_user: User = Depends(get_current_user),
+):
     try:
-        saves = list_saves(CURRENT_USER_ID, topic_id=topic_id)
+        saves = list_saves(current_user.user_id, topic_id=topic_id)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     return {"saves": saves, "count": len(saves)}
 
 
 @app.patch("/core/saves/{save_id}")
-async def core_update_save(save_id: str, body: SaveUpdateRequest):
+async def core_update_save(
+    save_id:      str,
+    body:         SaveUpdateRequest,
+    current_user: User = Depends(get_current_user),
+):
+    _assert_save_owned_by(save_id, current_user.user_id)
     existing = get_save(save_id)
     if not existing:
         raise HTTPException(status_code=404, detail="Save not found")
@@ -885,6 +933,8 @@ async def core_update_save(save_id: str, body: SaveUpdateRequest):
     if body.clear_topic or body.topic_id in ("", "__none__"):
         target_topic = None
     elif body.topic_id is not None:
+        # Verify target topic also belongs to this user
+        _assert_topic_owned_by(body.topic_id, current_user.user_id)
         target_topic = body.topic_id
 
     try:
@@ -896,10 +946,11 @@ async def core_update_save(save_id: str, body: SaveUpdateRequest):
 
 
 @app.delete("/core/saves/{save_id}")
-async def core_archive_save(save_id: str):
-    existing = get_save(save_id)
-    if not existing:
-        raise HTTPException(status_code=404, detail="Save not found")
+async def core_archive_save(
+    save_id:      str,
+    current_user: User = Depends(get_current_user),
+):
+    _assert_save_owned_by(save_id, current_user.user_id)
     try:
         ok = archive_save(save_id)
     except Exception as e:
@@ -907,7 +958,7 @@ async def core_archive_save(save_id: str):
     return {"status": "archived" if ok else "already_archived", "save_id": save_id}
 
 
-# ── SUPPORTING ENDPOINTS ───────────────────────────────────
+# ── SUPPORTING ENDPOINTS (unauthenticated) ─────────────────
 
 @app.get("/health")
 async def health():
@@ -922,6 +973,7 @@ async def health():
 
 @app.get("/schema")
 async def get_db_schema():
+    """Read-only demo schema; no user data exposed."""
     if not DB_PATH.exists():
         raise HTTPException(status_code=503, detail="accounting.db not found")
     conn = get_db_connection(DB_PATH)
@@ -932,6 +984,7 @@ async def get_db_schema():
 
 @app.get("/stats")
 async def get_stats():
+    """Diagnostic counts only. No per-user data exposed."""
     stats = {"db_exists": DB_PATH.exists(), "chroma_exists": CHROMA_DIR.exists()}
     if DB_PATH.exists():
         conn = sqlite3.connect(str(DB_PATH))
@@ -945,10 +998,6 @@ async def get_stats():
             except Exception:
                 pass
         conn.close()
-    try:
-        stats["session_count"] = len(get_all_sessions())
-    except Exception:
-        stats["session_count"] = 0
 
     try:
         stats["user_count"]  = count_users()
@@ -957,16 +1006,16 @@ async def get_stats():
     except Exception as e:
         print(f"[main] stats core counts failed: {e}")
 
-    try:
-        stats["saves_needing_embedding"] = len(list_saves_needing_embedding(CURRENT_USER_ID))
-    except Exception:
-        pass
-
     return stats
 
 
 @app.get("/", response_class=HTMLResponse)
 async def serve_ui():
+    """
+    Serves the single-page UI. The UI itself calls /auth/me on load
+    and decides whether to render the chat or the login screen, so
+    this endpoint is intentionally unauthenticated.
+    """
     ui_path = static_dir / "index.html"
     if ui_path.exists():
         return FileResponse(str(ui_path))
