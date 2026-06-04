@@ -8,7 +8,7 @@ Project rebrand:
   Insight & Analysis). Backend identifier (db filename, cookie name)
   stays as coreckoner.db / cassia_session respectively.
 
-v2.12.0 — Phase 5b/c (this version):
+v2.12.1 — Phase 5b/c (this version):
   - Every user-data endpoint now requires authentication via
     get_current_user. Unauthenticated requests return 401.
   - CURRENT_USER_ID global removed; user_id flows from the request
@@ -23,7 +23,7 @@ v2.12.0 — Phase 5b/c (this version):
   - Bcrypt "trapped error reading bcrypt version" startup warning
     silenced via a one-line passlib log filter. Cosmetic only;
     functionality is unaffected.
-  - Banner bumped to v2.12.0.
+  - Banner bumped to v2.12.1.
 
 Previous v2.10.1 highlights kept intact:
   - Phase 4d core recall, Phase 4e topic-grouped sessions,
@@ -128,7 +128,7 @@ CHROMA_DIR   = PROJECT_ROOT / "outputs" / "chroma_db"
 async def lifespan(app: FastAPI):
     print("\n" + "═" * 52)
     print("  CASSIA — Accounting AI Chatbot")
-    print("  v2.12.0 · Phase 5b/c (auth-required)")
+    print("  v2.12.1 · Phase 5b/c (auth-required)")
     print("═" * 52)
     try:
         init_db()
@@ -172,7 +172,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title       = "CASSIA — Accounting AI Chatbot",
     description = "Hybrid RAG + Text-to-SQL with persistent sessions, uploads, core recall, multi-user auth",
-    version     = "2.12.0",
+    version     = "2.12.1",
     lifespan    = lifespan,
 )
 
@@ -248,9 +248,10 @@ class TopicRenameRequest(BaseModel):
 
 
 class SaveUpdateRequest(BaseModel):
-    topic_id:    Optional[str] = None
-    note:        Optional[str] = None
-    clear_topic: bool          = False
+    topic_id:          Optional[str] = None
+    note:              Optional[str] = None
+    clear_topic:       bool          = False
+    also_move_session: bool          = False
 
 
 # ── Ownership-check helpers ────────────────────────────────
@@ -944,7 +945,26 @@ async def core_update_save(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-    return {"status": "updated", "save_id": save_id, "topic_id": target_topic}
+    # Pass 5 (Stream B polish): opt-in ripple — when also_move_session=True,
+    # also move the originating chat session to the same topic. Silent skip
+    # if the save has no source_session_id (e.g. upload saves) or the source
+    # session no longer exists / no longer belongs to the user.
+    session_also_moved = False
+    if body.also_move_session:
+        source_session_id = existing.get("source_session_id")
+        if source_session_id and session_belongs_to_user(source_session_id, current_user.user_id):
+            try:
+                if update_session_topic(source_session_id, target_topic):
+                    session_also_moved = True
+            except Exception as e:
+                print(f"[main] also_move_session ripple failed for {source_session_id}: {e}")
+
+    return {
+        "status":             "updated",
+        "save_id":            save_id,
+        "topic_id":           target_topic,
+        "session_also_moved": session_also_moved,
+    }
 
 
 @app.delete("/core/saves/{save_id}")
