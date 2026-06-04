@@ -8,7 +8,7 @@ Project rebrand:
   Insight & Analysis). Backend identifier (db filename, cookie name)
   stays as coreckoner.db / cassia_session respectively.
 
-v2.11.0 — Phase 5b/c (this version):
+v2.12.0 — Phase 5b/c (this version):
   - Every user-data endpoint now requires authentication via
     get_current_user. Unauthenticated requests return 401.
   - CURRENT_USER_ID global removed; user_id flows from the request
@@ -23,7 +23,7 @@ v2.11.0 — Phase 5b/c (this version):
   - Bcrypt "trapped error reading bcrypt version" startup warning
     silenced via a one-line passlib log filter. Cosmetic only;
     functionality is unaffected.
-  - Banner bumped to v2.11.0.
+  - Banner bumped to v2.12.0.
 
 Previous v2.10.1 highlights kept intact:
   - Phase 4d core recall, Phase 4e topic-grouped sessions,
@@ -128,7 +128,7 @@ CHROMA_DIR   = PROJECT_ROOT / "outputs" / "chroma_db"
 async def lifespan(app: FastAPI):
     print("\n" + "═" * 52)
     print("  CASSIA — Accounting AI Chatbot")
-    print("  v2.11.0 · Phase 5b/c (auth-required)")
+    print("  v2.12.0 · Phase 5b/c (auth-required)")
     print("═" * 52)
     try:
         init_db()
@@ -172,7 +172,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title       = "CASSIA — Accounting AI Chatbot",
     description = "Hybrid RAG + Text-to-SQL with persistent sessions, uploads, core recall, multi-user auth",
-    version     = "2.11.0",
+    version     = "2.12.0",
     lifespan    = lifespan,
 )
 
@@ -471,7 +471,9 @@ async def chat(
 
         if route in ("rag", "both"):
             rag_result = run_rag_pipeline(
-                question, llm, CHROMA_DIR, session_id=session_id
+                question, llm, CHROMA_DIR,
+                session_id=session_id,
+                user_id=current_user.user_id,
             )
             if route == "rag":
                 response_type = rag_result.get("response_type", "answer")

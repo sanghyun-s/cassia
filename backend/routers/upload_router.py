@@ -1,6 +1,6 @@
 """
 =============================================================
-UPLOAD ROUTER — /uploads endpoints  (Phase 5b/c)
+UPLOAD ROUTER — /uploads endpoints  (Phase 5c, Pass 3)
 =============================================================
 
 Endpoints:
@@ -9,16 +9,19 @@ Endpoints:
   GET    /sessions/{session_id}/uploads             list uploads
   DELETE /uploads/{upload_id}                       remove an upload
 
-Phase 5b/c changes (this version):
+Phase 5b/c authentication scoping (carried forward):
   - Every endpoint requires current_user via get_current_user dependency
   - Session ownership is verified before any preview/ingest/list
   - DELETE verifies the upload itself belongs to the caller
-  - create_upload() now receives user_id (stored on the row for future
-    per-user filtering in Pass 3)
-  - PDF ingest gets user_id passed through to ingest_pdf() — Pass 3 will
-    use it for ChromaDB vector metadata. For now ingest_pdf signature
-    stays compatible; the kwarg is forward-looking and ignored if
-    document.py hasn't been updated yet.
+  - create_upload() receives user_id (stored on the row)
+
+Phase 5c (Pass 3) — ChromaDB user isolation:
+  - PDF ingest now calls ingest_pdf(..., user_id=current_user.user_id)
+    UNCONDITIONALLY. The temporary try/except TypeError fallback from
+    the Phase 5b/c forward-compat shim has been REMOVED.
+  - Rationale: document.ingest_pdf() now requires user_id (raises
+    ValueError if missing). Keeping a fallback to a signature-less call
+    would silently bypass user isolation at the vector layer.
 """
 
 import json
@@ -228,21 +231,16 @@ async def ingest_upload(
         }
 
     # ── PDF ──
+    # Pass 3 (Phase 5c): clean ingest call. user_id is REQUIRED by
+    # document.ingest_pdf() — no fallback. Vectors carry user_id metadata.
     if file_type == "pdf":
         try:
-            # Pass user_id through. document.ingest_pdf() may not yet
-            # consume it (Pass 3 work) — try with the kwarg first,
-            # fall back to the Phase 5a signature if not supported.
-            try:
-                result = ingest_pdf(
-                    file_bytes, file.filename, session_id,
-                    user_id=current_user.user_id,
-                )
-            except TypeError:
-                # ingest_pdf hasn't been updated for Pass 3 yet — use
-                # the existing signature. The upload_id row still gets
-                # user_id, so per-user filtering at the DB layer works.
-                result = ingest_pdf(file_bytes, file.filename, session_id)
+            result = ingest_pdf(
+                file_bytes,
+                file.filename,
+                session_id,
+                user_id=current_user.user_id,
+            )
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
         except Exception as e:

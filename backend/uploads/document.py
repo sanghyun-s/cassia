@@ -15,6 +15,20 @@ Phase 4b-1:
   - ingest_pdf now also returns a "summary" key: a compact
     {kind:"document", page_count, chunk_count, preview_text} captured from
     the first chunk, so core-saves can be rich without re-reading the PDF.
+
+Phase 5c (Pass 3) — ChromaDB user isolation:
+  - ingest_pdf now REQUIRES a `user_id` parameter (no default, no fallback).
+    The previous TypeError fallback in upload_router.py has been removed in
+    the same commit; calling ingest_pdf without user_id raises immediately.
+  - Every chunk's metadata now carries both `session_id` AND `user_id`.
+    This is what `rag_pipeline._query_user_uploads()` uses as a hard
+    conjunction filter at retrieval time. Defense in depth on top of the
+    API-layer ownership checks added in Pass 2.
+  - Delete functions are UNCHANGED. They already filter by session_id,
+    which is transitively user-safe because Pass 2 verifies session
+    ownership before any delete endpoint reaches this module.
+  - The IRS Pub 15 collection is NOT touched here. It remains globally
+    readable reference content.
 """
 
 import os
@@ -113,16 +127,35 @@ def preview_pdf(file_bytes: bytes, filename: str) -> dict:
     }
 
 
-def ingest_pdf(file_bytes: bytes, filename: str, session_id: str) -> dict:
+def ingest_pdf(
+    file_bytes: bytes,
+    filename:   str,
+    session_id: str,
+    user_id:    str,
+) -> dict:
     """
     Parse PDF → chunk → embed → write to user_uploads collection.
-    Every chunk tagged with metadata {session_id, source_file, page}.
+
+    Every chunk is tagged with metadata
+      {session_id, user_id, source_file, source_doc, source_type,
+       page, page_display}
+    so retrieval can apply the per-user, per-session conjunction filter
+    enforced by `rag_pipeline._query_user_uploads()`.
+
+    Args:
+        file_bytes: raw PDF bytes
+        filename:   display name for citations
+        session_id: REQUIRED. The chat session this upload belongs to.
+        user_id:    REQUIRED. The authenticated user uploading the file.
+                    Pass 3 (Phase 5c) made this mandatory — no fallback.
 
     Returns: {filename, chunk_count, page_count, summary}
-    Raises on any failure — caller wraps with HTTPException.
+    Raises ValueError on any missing required argument or empty PDF.
     """
     if not session_id:
         raise ValueError("session_id is required to ingest a PDF")
+    if not user_id:
+        raise ValueError("user_id is required to ingest a PDF")
     if not file_bytes:
         raise ValueError("Empty PDF bytes")
 
@@ -144,6 +177,7 @@ def ingest_pdf(file_bytes: bytes, filename: str, session_id: str) -> dict:
             page_zero_indexed = p.metadata.get("page", 0)
             p.metadata = {
                 "session_id":   session_id,
+                "user_id":      user_id,        # ← Pass 3: vector-level isolation
                 "source_file":  filename,
                 "source_doc":   filename,        # for citation display
                 "source_type":  "user",          # tag so retrieval can filter
@@ -191,6 +225,10 @@ def delete_upload_vectors(session_id: str, filename: str) -> int:
     """
     Delete vectors for ONE uploaded PDF in one session.
     Returns the number of vectors deleted (best effort).
+
+    Session-scoped filter is sufficient — once Pass 2 verifies the
+    caller owns the session before this is invoked, the delete is
+    transitively user-safe. No user_id filter needed here.
     """
     if not session_id or not filename:
         return 0
@@ -215,6 +253,8 @@ def delete_session_vectors(session_id: str) -> int:
     """
     Bulk delete ALL vectors for a session. Used by session-delete cascade.
     Returns the number of vectors deleted (best effort).
+
+    Session-scoped — same rationale as delete_upload_vectors above.
     """
     if not session_id:
         return 0

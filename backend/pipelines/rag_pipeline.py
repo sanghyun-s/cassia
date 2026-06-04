@@ -8,7 +8,21 @@ Phase 3 C3:
   - 'user_uploads' collection = per-session user PDFs (new)
   - Retrieval queries BOTH, filters user_uploads by session_id, merges
     by raw similarity score, returns top-k overall.
-  - Backwards compatible: if no session_id passed, only IRS docs are used.
+
+Phase 5c (Pass 3) — ChromaDB user isolation:
+  - User-uploads retrieval now requires BOTH `user_id` AND `session_id`,
+    applied as a hard conjunction filter at the vector-store level.
+  - All access to the user_uploads collection is funneled through
+    `_query_user_uploads()`. That is now the ONLY entry point for
+    user-uploaded vector retrieval anywhere in the codebase. Bypassing
+    it bypasses user isolation.
+  - `run_rag_pipeline()` accepts `user_id` (Optional). When `session_id`
+    is provided but `user_id` is missing, the user_uploads query is
+    silently skipped — the IRS collection is still consulted.
+  - The IRS Pub 15 query is UNCHANGED. It has no per-user filter and
+    is globally readable for all authenticated users.
+  - Backwards-compatible: callers that omit `user_id` still get IRS-only
+    answers (no crash, no leak).
 """
 
 from pathlib import Path
@@ -86,10 +100,58 @@ def _format_context(docs: List[Document]) -> str:
     return "\n\n".join(lines)
 
 
+def _query_user_uploads(
+    question:   str,
+    user_id:    str,
+    session_id: str,
+    k:          int,
+    chroma_dir: Path,
+) -> List[tuple]:
+    """
+    THE ONLY entry point for user-uploaded vector retrieval.
+
+    Both `user_id` AND `session_id` are REQUIRED and applied as a hard
+    conjunction filter at the vector store level. This is defense in
+    depth on top of the API-layer ownership checks added in Pass 2 —
+    even if a session_id ever leaked (shared URLs, logging, a future
+    "share session" feature), the user_id filter still prevents
+    cross-user vector access.
+
+    DO NOT add raw `collection.query()` or `similarity_search` calls
+    anywhere else in the codebase that hit the user_uploads collection.
+    Bypassing this helper bypasses user isolation. If you find yourself
+    wanting "just a quick query," route it through here instead.
+
+    Returns a list of (negated_distance, Document) tuples, ready to be
+    merged with IRS results in `_retrieve()`.
+    """
+    if not user_id:
+        raise ValueError("user_id is required for user_uploads retrieval")
+    if not session_id:
+        raise ValueError("session_id is required for user_uploads retrieval")
+
+    user_vs = _open_collection(USER_COLLECTION, chroma_dir)
+    user_results = user_vs.similarity_search_with_score(
+        question,
+        k      = k,
+        filter = {"$and": [
+            {"session_id": session_id},
+            {"user_id":    user_id},
+        ]},
+    )
+
+    results: List[tuple] = []
+    for doc, dist in user_results:
+        doc.metadata.setdefault("source_type", "user")
+        results.append((-float(dist), doc))   # negate so higher = better
+    return results
+
+
 def _retrieve(
     question:   str,
     chroma_dir: Path,
     session_id: Optional[str],
+    user_id:    Optional[str],
 ) -> List[Document]:
     """
     Query both collections, return merged top-k by similarity score.
@@ -106,6 +168,8 @@ def _retrieve(
     combined: List[tuple] = []   # list of (score, Document)
 
     # ── IRS public collection (read-only, always included) ─────────
+    # No user filter — IRS Pub 15 is global reference content readable
+    # by every authenticated user.
     try:
         irs_vs = _open_collection(IRS_COLLECTION, chroma_dir)
         irs_results = irs_vs.similarity_search_with_score(
@@ -118,21 +182,20 @@ def _retrieve(
     except Exception as e:
         print(f"[rag_pipeline] IRS collection query failed: {e}")
 
-    # ── User uploads collection (filtered by session_id) ───────────
-    if session_id:
+    # ── User uploads collection (filtered by session_id AND user_id) ──
+    # Pass 3: vector-level isolation. The API layer (Pass 2) already
+    # verified ownership; this is the second line of defense at the
+    # store query itself.
+    if session_id and user_id:
         try:
-            user_vs = _open_collection(USER_COLLECTION, chroma_dir)
-            user_results = user_vs.similarity_search_with_score(
-                question,
-                k      = TOP_K_PER_COLLECTION,
-                filter = {"session_id": session_id},   # security boundary
+            user_pairs = _query_user_uploads(
+                question, user_id, session_id, TOP_K_PER_COLLECTION, chroma_dir
             )
-            for doc, dist in user_results:
-                doc.metadata.setdefault("source_type", "user")
-                combined.append((-float(dist), doc))
+            combined.extend(user_pairs)
         except Exception as e:
             # Common case: the user_uploads collection doesn't exist yet
-            # (no PDFs ever uploaded). Silent skip.
+            # (no PDFs ever uploaded), or this user has no chunks in this
+            # session. Silent skip — IRS results still come back.
             print(f"[rag_pipeline] user_uploads query skipped: {e}")
 
     # Sort by score descending and take the top-k overall
@@ -145,13 +208,19 @@ def run_rag_pipeline(
     llm:        ChatOpenAI,
     chroma_dir: Path,
     session_id: Optional[str] = None,
+    user_id:    Optional[str] = None,
 ) -> dict:
     """
-    Full RAG pipeline with optional session-scoped user uploads.
+    Full RAG pipeline with optional session-scoped, user-scoped uploads.
+
+    Behavior:
+      - IRS Pub 15 is always queried (no user filter).
+      - User uploads are queried IFF both session_id and user_id are
+        provided. If either is missing, only IRS results are returned.
 
     Returns dict with: answer, sources, response_type, chart_hint
     """
-    docs = _retrieve(question, chroma_dir, session_id)
+    docs = _retrieve(question, chroma_dir, session_id, user_id)
 
     if not docs:
         return {
