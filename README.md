@@ -1,4 +1,4 @@
-# CASSIA
+# CASSIA — Chat-based Accounting System
 
 **Chat-based Accounting System for SQL, Search, Insight & Analysis**
 
