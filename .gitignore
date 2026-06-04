@@ -89,3 +89,6 @@ term_log_*
 *.temp
 *.pid
 *.seed
+
+# Phase 5 close-out — exclude all runtime outputs from git tracking
+outputs/
