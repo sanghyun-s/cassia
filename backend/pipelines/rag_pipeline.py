@@ -51,7 +51,7 @@ Some excerpts may come from IRS publications (public), others from
 documents the user uploaded into this session. Treat both as valid
 context; prefer the source most relevant to the question.
 
-If the answer is not in the excerpts, say "I couldn't find that in the available documents."
+If the answer is not in the excerpts, say "I couldn't find support for that in the currently indexed documents. Try uploading a relevant policy, client memo, agency notice, or source document — I can search anything you add to the session."
 Always cite the source document and page number when present.
 
 --------- EXCERPTS ---------
@@ -227,7 +227,7 @@ def run_rag_pipeline(
             "pipeline":      "rag",
             "response_type": "rag_not_found",
             "chart_hint":    "none",
-            "answer":        "I couldn't find anything relevant in the available documents.",
+            "answer":        "I couldn't find support for that in the currently indexed documents. Try uploading a relevant policy, client memo, agency notice, or source document — I can search anything you add to the session.",
             "sources":       [],
             "sql":           None,
             "raw_data":      [],

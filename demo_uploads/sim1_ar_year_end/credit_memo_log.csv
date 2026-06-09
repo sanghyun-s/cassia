@@ -1,0 +1,11 @@
+credit_memo_id,date_issued,customer_name,related_invoice_id,amount,reason,status
+CM-2026-001,2026-02-10,Quest Solutions,AR-2026-007,4000.00,Overbilled March consulting hours - adjustment,Issued - Not Applied
+CM-2026-002,2026-01-20,Titan Wholesale,AR-2026-012,2400.00,Partial credit for disputed bookkeeping scope,Issued - Not Applied
+CM-2026-003,2026-02-28,Union Pacific Foods,AR-2026-013,1500.00,Goodwill credit for delayed deliverables,Issued - Not Applied
+CM-2026-004,2026-03-05,Pacific Shipping,AR-2026-008,800.00,Late filing fee waived,Applied
+CM-2026-005,2026-01-15,BlueStar Retail,AR-2026-006,500.00,Rounding adjustment on 2025 tax return,Applied
+CM-2026-006,2026-02-12,Frontier Tech,AR-2026-009,3000.00,Scope reduction - advisory hours,Applied
+CM-2026-007,2026-03-18,Liberty Insurance,AR-2026-011,2000.00,Duplicate billing correction,Issued - Not Applied
+CM-2026-008,2026-01-30,Crest Healthcare,,1200.00,Volume discount on Q1 audit,Applied
+CM-2026-009,2026-02-22,Zenith Software,,5000.00,Retainer adjustment,Applied
+CM-2026-010,2026-03-25,KLM Restaurants,AR-2026-014,800.00,Partial settlement offer credit,Issued - Not Applied

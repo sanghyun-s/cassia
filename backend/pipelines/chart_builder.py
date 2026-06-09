@@ -61,6 +61,32 @@ _MONTH_COLUMN_KEYWORDS = (
     "jan_", "feb_", "mar_", "apr_", "2026", "2025",
 )
 
+# ── v2 stabilization: column selection for chart_spec ─────────
+# Accounting measure columns we want to chart, lowercased.
+PREFERRED_MEASURE_COLUMNS = (
+    "balance_due", "amount", "debit", "credit", "revenue", "expense",
+    "total", "net_income", "ytd_total", "payment_amount",
+    "invoice_amount", "cash_balance", "outstanding_balance",
+    "january_2026", "february_2026", "march_2026", "april_2026",
+    "jan_31_2026", "feb_28_2026", "mar_31_2026", "apr_30_2026",
+)
+
+# Identifier / date / categorical columns we should never chart as a
+# numeric measure, even when they happen to parse as numeric.
+AVOID_AS_MEASURE_COLUMNS = (
+    "date", "due_date", "invoice_date", "payment_date", "period",
+    "account_code", "customer_id", "vendor_id", "client_id",
+    "days_outstanding", "aging_bucket", "txn_id", "id",
+    "reference", "category",
+)
+
+# Detects explicit user requests like "only balance_due" or
+# "only debit and credit" — when matched, honor the request.
+EXPLICIT_COLUMN_REQUEST_PATTERN = re.compile(
+    r"\bonly\s+([\w_]+(?:\s+and\s+[\w_]+)*)", re.I
+)
+
+
 
 def _classify_columns(columns, rows):
     """
@@ -174,16 +200,97 @@ def reorder_for_chart(columns, rows, chart_hint: str):
     return sorted(rows, key=_sort_key, reverse=True)
 
 
+def _select_chart_columns(columns, rows, question, chart_hint):
+    """
+    Pick which columns should appear in the chart_spec.
+
+    Priority:
+      1. Explicit user request — "only balance_due", "only debit and credit"
+         → use those numeric columns + the first categorical column for label
+      2. Monthly/trend line chart — pass through all columns unchanged
+         (the month-name detection already produced the right wide shape)
+      3. Heuristic — label column + PREFERRED_MEASURE_COLUMNS, falling back
+         to safe numeric columns. AVOID_AS_MEASURE_COLUMNS are never
+         charted as measures.
+
+    Returns the list of column names to keep. The caller subsets rows.
+
+    Defensive fallback: if no usable measure column is identified, returns
+    all columns unchanged so the chart still renders (preserves prior
+    behavior in edge cases).
+    """
+    if not columns or not rows:
+        return columns
+
+    # 1. Explicit user request
+    explicit_match = EXPLICIT_COLUMN_REQUEST_PATTERN.search(question or "")
+    if explicit_match:
+        requested_text = explicit_match.group(1).lower()
+        tokens = [t.strip() for t in re.split(r"\s+and\s+|\s*,\s*",
+                                              requested_text) if t.strip()]
+        col_lower_map = {c.lower(): c for c in columns}
+        requested = [col_lower_map[t] for t in tokens if t in col_lower_map]
+        if requested:
+            _num, categorical_cols = _classify_columns(columns, rows)
+            keep = list(categorical_cols[:1]) if categorical_cols else []
+            for c in requested:
+                if c not in keep:
+                    keep.append(c)
+            return keep
+
+    # 2. Monthly/trend line chart — preserve the wide shape
+    if chart_hint == "line":
+        if any(any(kw in c.lower() for kw in _MONTH_COLUMN_KEYWORDS)
+               for c in columns):
+            return columns
+
+    # 3. Heuristic filtering
+    numeric_cols, categorical_cols = _classify_columns(columns, rows)
+    keep = list(categorical_cols[:1]) if categorical_cols else []
+
+    avoid_set     = set(AVOID_AS_MEASURE_COLUMNS)
+    preferred_set = set(PREFERRED_MEASURE_COLUMNS)
+
+    preferred_hits = [c for c in numeric_cols if c.lower() in preferred_set]
+    safe_hits      = [c for c in numeric_cols
+                      if c.lower() not in avoid_set
+                      and c.lower() not in preferred_set]
+
+    if preferred_hits:
+        keep.extend(preferred_hits)
+    elif safe_hits:
+        # No preferred match but some safe numeric — take just the first
+        # to avoid multi-series noise.
+        keep.append(safe_hits[0])
+    else:
+        # No usable measure column. Defensive: return all columns so the
+        # chart still renders with prior behavior in unexpected shapes.
+        return columns
+
+    return keep
+
+
 def build_chart_spec(columns, rows, question: str, chart_hint: str) -> dict:
     """
     Package the chart payload for the frontend's renderChart().
 
     Does NOT reorder rows — assumes upstream already called reorder_for_chart
     so that the data table and the chart show consistent ordering.
+
+    v2 stabilization: filters columns to just the accounting measure(s) +
+    label, preventing multi-series noise from date/id/category columns
+    that happen to parse as numeric.
     """
+    print(f"[P1 DEBUG] build_chart_spec IN cols: {columns}", flush=True)
+    selected = _select_chart_columns(columns, rows, question, chart_hint)
+    print(f"[P1 DEBUG] build_chart_spec OUT cols: {selected}", flush=True)
+    filtered_rows = [
+        {c: row.get(c) for c in selected if c in row}
+        for row in rows
+    ]
     return {
         "chart_type": chart_hint,
-        "columns":    columns,
-        "rows":       rows,
+        "columns":    selected,
+        "rows":       filtered_rows,
         "question":   question,
     }

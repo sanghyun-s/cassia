@@ -92,3 +92,12 @@ term_log_*
 
 # Phase 5 close-out — exclude all runtime outputs from git tracking
 outputs/
+*.bak
+__pycache__/
+*.pyc
+.DS_Store
+venv/
+.env
+outputs/coreckoner.db
+outputs/sessions/
+outputs/chroma_db/

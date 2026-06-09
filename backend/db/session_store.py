@@ -54,6 +54,7 @@ upload_belongs_to_user() FIRST, then operate.
 import sqlite3
 import uuid
 import json
+from utils.json_safe import safe_json_dumps
 from pathlib import Path
 from datetime import datetime, timezone
 
@@ -382,7 +383,7 @@ def save_artifact(
     content:       dict | list | str,
 ) -> str:
     artifact_id  = str(uuid.uuid4())
-    content_json = json.dumps(content, ensure_ascii=False)
+    content_json = safe_json_dumps(content)
     conn         = _get_conn()
     try:
         conn.execute(
@@ -460,7 +461,7 @@ def create_upload(
     summary_str = None
     if summary_json is not None:
         summary_str = (summary_json if isinstance(summary_json, str)
-                       else json.dumps(summary_json, ensure_ascii=False))
+                       else safe_json_dumps(summary_json))
 
     conn = _get_conn()
     try:
@@ -471,7 +472,7 @@ def create_upload(
                VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 upload_id, session_id, user_id, filename, file_type, target,
-                json.dumps(table_names) if table_names else None,
+                safe_json_dumps(table_names) if table_names else None,
                 chunk_count, row_count, summary_str, _now()
             )
         )
@@ -726,7 +727,7 @@ def create_save(
         meta_str = None
         if metadata_json is not None:
             meta_str = (metadata_json if isinstance(metadata_json, str)
-                        else json.dumps(metadata_json, ensure_ascii=False))
+                        else safe_json_dumps(metadata_json))
 
         conn.execute(
             """INSERT INTO core_saves

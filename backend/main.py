@@ -41,6 +41,7 @@ dependency lands on ~17 endpoints. Routes that DON'T require auth:
 
 import os
 import json
+from utils.json_safe import safe_json_dumps
 import logging
 import sqlite3
 from pathlib import Path
@@ -316,7 +317,7 @@ def _try_embed_save(save_id: str, text: str) -> None:
         return
     try:
         vec  = embed_text(text)
-        vstr = json.dumps(vec)
+        vstr = safe_json_dumps(vec)
         update_save_embedding(save_id, vstr)
     except Exception as e:
         print(f"[main] embed-on-save failed for {save_id}: {e}")
@@ -437,9 +438,52 @@ async def chat(
     try:
         if route == "core_recall":
             core_attempted = True
-            core_result    = run_core_recall_pipeline(
-                question, llm, user_id=current_user.user_id
-            )
+
+            # v2 stabilization: hard timeout on Core Recall to prevent
+            # hangs like Sim 3's 5-minute embedding wait. On timeout or
+            # unexpected error, return a controlled user-visible message
+            # (matched=True so the message becomes the final answer).
+            import concurrent.futures as _cf
+            try:
+                with _cf.ThreadPoolExecutor(max_workers=1) as _ex:
+                    _future = _ex.submit(
+                        run_core_recall_pipeline, question, llm,
+                        user_id=current_user.user_id,
+                    )
+                    core_result = _future.result(timeout=30.0)
+            except _cf.TimeoutError:
+                print("[core_recall] timeout after 30s — returning fallback")
+                core_result = {
+                    "pipeline":      "core_recall",
+                    "response_type": "answer",
+                    "matched":       True,
+                    "answer":        (
+                        "Searching your saved work is taking longer than "
+                        "expected. Please try rephrasing your question, or "
+                        "try again in a moment."
+                    ),
+                    "sources":    [],
+                    "chart_hint": "none",
+                    "sql":        None,
+                    "raw_data":   [],
+                    "columns":    [],
+                }
+            except Exception as _e:
+                print(f"[core_recall] error: {_e}")
+                core_result = {
+                    "pipeline":      "core_recall",
+                    "response_type": "answer",
+                    "matched":       True,
+                    "answer":        (
+                        "I couldn't search your saved work right now. "
+                        "Please try again in a moment."
+                    ),
+                    "sources":    [],
+                    "chart_hint": "none",
+                    "sql":        None,
+                    "raw_data":   [],
+                    "columns":    [],
+                }
 
             if core_result.get("matched"):
                 core_matched  = True
@@ -483,16 +527,89 @@ async def chat(
             if route == "both":
                 sql_ans = sql_result.get("answer", "")
                 rag_ans = rag_result.get("answer", "")
-                merge   = llm.invoke(
-                    f"Combine these two answers into one clear response:\n\n"
-                    f"DATA ANSWER: {sql_ans}\n"
-                    f"POLICY ANSWER: {rag_ans}\n\n"
-                    f"Write a unified 3-5 sentence answer addressing both numbers and policy context."
+
+                # v2 stabilization: detect SQL stubs/errors so they're
+                # not passed to the synthesizer as evidence
+                _sql_lower = str(sql_ans).lower()
+                _sql_unusable_patterns = (
+                    "no uploaded data",
+                    "this data is not in the uploaded files",
+                    "this data isn't in the demo tables",
+                    "execution failed",
+                    "only one sql statement",
+                    "no such column",
+                    "no such table",
+                    "selects to the left and right of union",
+                    "syntax error",
+                    "the query execution failed",
+                    "the query could not be executed",
                 )
+                sql_unusable = (
+                    not sql_ans
+                    or any(p in _sql_lower for p in _sql_unusable_patterns)
+                )
+
+                if sql_unusable:
+                    # SQL portion failed or returned a stub — synthesize
+                    # from RAG alone with explicit instruction not to leak
+                    # technical error text or claim no data exists
+                    merge = llm.invoke(
+                        f"Answer the user's question below using only the "
+                        f"policy/guidance content provided. The structured-"
+                        f"data retrieval for this question failed or returned "
+                        f"no usable result. Do NOT claim 'there is no uploaded "
+                        f"data' or quote any technical SQL error text — just "
+                        f"answer from the policy content if it's sufficient, "
+                        f"or briefly acknowledge you couldn't form a reliable "
+                        f"data query and ask the user to specify the table, "
+                        f"amount, or comparison target.\n\n"
+                        f"Question: {question}\n\n"
+                        f"POLICY ANSWER: {rag_ans}\n\n"
+                        f"Write a unified 3-5 sentence answer."
+                    )
+                else:
+                    merge = llm.invoke(
+                        f"Combine these two answers into one clear response:\n\n"
+                        f"DATA ANSWER: {sql_ans}\n"
+                        f"POLICY ANSWER: {rag_ans}\n\n"
+                        f"Write a unified 3-5 sentence answer addressing both numbers and policy context."
+                    )
                 final_answer  = merge.content.strip()
                 response_type = "answer"
             elif route == "sql":
-                final_answer = sql_result.get("answer", "No answer generated.")
+                # P2b stabilization: guard the SQL-only route the same way
+                # the BOTH route is guarded. If the SQL pipeline returned a
+                # stub or leaked an execution error, replace it with a clean
+                # fallback instead of surfacing raw SQLite text to the user
+                # (Phase 6 Sim 4 / Image 4 Oracle UNION "no such column").
+                _sql_only_ans   = sql_result.get("answer", "")
+                _sql_only_lower = str(_sql_only_ans).lower()
+                _p2b_unusable_patterns = (
+                    "no uploaded data",
+                    "this data is not in the uploaded files",
+                    "this data isn't in the demo tables",
+                    "execution failed",
+                    "only one sql statement",
+                    "no such column",
+                    "no such table",
+                    "selects to the left and right of union",
+                    "syntax error",
+                    "the query execution failed",
+                    "the query could not be executed",
+                )
+                _p2b_unusable = (
+                    not _sql_only_ans
+                    or any(p in _sql_only_lower for p in _p2b_unusable_patterns)
+                )
+                if _p2b_unusable:
+                    final_answer = (
+                        "I couldn't form a reliable data query. Could you "
+                        "specify which table, amount, or comparison target "
+                        "you'd like me to look at?"
+                    )
+                    response_type = "answer"
+                else:
+                    final_answer = sql_result.get("answer", "No answer generated.")
             elif route == "rag":
                 final_answer = rag_result.get("answer", "No answer generated.")
 

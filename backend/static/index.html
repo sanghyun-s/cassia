@@ -1768,6 +1768,63 @@ function sendQuestion(q) {
   sendMessage();
 }
 
+// v2 stabilization P1b: mirror backend's _select_chart_columns for the
+// new-message rendering path (where _chart_spec isn't yet populated).
+// History-load path uses _chart_spec from the saved artifact and is unaffected.
+const _P1_PREFERRED_MEASURE_COLS = new Set([
+  'balance_due', 'amount', 'debit', 'credit', 'revenue', 'expense',
+  'total', 'net_income', 'ytd_total', 'payment_amount',
+  'invoice_amount', 'cash_balance', 'outstanding_balance',
+  'january_2026', 'february_2026', 'march_2026', 'april_2026',
+  'jan_31_2026', 'feb_28_2026', 'mar_31_2026', 'apr_30_2026',
+]);
+
+const _P1_AVOID_AS_MEASURE_COLS = new Set([
+  'date', 'due_date', 'invoice_date', 'payment_date', 'period',
+  'account_code', 'customer_id', 'vendor_id', 'client_id',
+  'days_outstanding', 'aging_bucket', 'txn_id', 'id',
+  'reference', 'category',
+]);
+
+function _p1SelectChartColumns(columns, rows) {
+  // Defensive: return as-is if nothing to filter
+  if (!columns || !columns.length || !rows || !rows.length) return columns;
+
+  // Classify columns as numeric vs categorical (>70% values parse as number)
+  const numericCols     = [];
+  const categoricalCols = [];
+  columns.forEach(col => {
+    const vals = rows.map(r => r[col]).filter(v => v != null && v !== '');
+    const numCount = vals.filter(v => !isNaN(parseFloat(v))).length;
+    if (vals.length && numCount / vals.length > 0.7) {
+      numericCols.push(col);
+    } else {
+      categoricalCols.push(col);
+    }
+  });
+
+  // Filter numeric columns: prefer PREFERRED, avoid AVOID
+  const preferredHits = numericCols.filter(c =>
+    _P1_PREFERRED_MEASURE_COLS.has(c.toLowerCase())
+  );
+  const safeHits = numericCols.filter(c =>
+    !_P1_AVOID_AS_MEASURE_COLS.has(c.toLowerCase())
+    && !_P1_PREFERRED_MEASURE_COLS.has(c.toLowerCase())
+  );
+
+  const keep = categoricalCols.length ? [categoricalCols[0]] : [];
+  if (preferredHits.length) {
+    keep.push(...preferredHits);
+  } else if (safeHits.length) {
+    // No preferred match but some safe numeric — take just the first
+    keep.push(safeHits[0]);
+  } else {
+    // No usable measure column — defensive fallback to all columns
+    return columns;
+  }
+  return keep;
+}
+
 function renderChart(chartType, columns, rows, question) {
   if (!rows || !rows.length || !columns || !columns.length) return null;
 
@@ -2028,7 +2085,7 @@ function appendAIMessage(data, ts) {
     const spec = data._chart_spec;
     const type = spec ? spec.chart_type : chartHint;
     if (type && type !== 'none') {
-      const chartCols = spec ? spec.columns : cols;
+      const chartCols = spec ? spec.columns : _p1SelectChartColumns(cols, rows);
       const chartRows = spec ? spec.rows    : rows;
       const chartQ    = spec ? spec.question : (data.question || '');
       const chartEl   = renderChart(type, chartCols, chartRows, chartQ);
