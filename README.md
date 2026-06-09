@@ -8,6 +8,12 @@ financial data (QuickBooks-style exports), with persistent multi-session
 chat, per-session file uploads, semantic recall of saved answers, and
 invite-only multi-user authentication with per-user data isolation.
 
+**Positioning:** a chat-based accounting *support* workspace for small-business
+follow-up work — client questions, agency notices, and follow-up tasks (the
+support side of a practice, distinct from bookkeeping/reconciliation/calculation
+tools). The workflow mirrors how accountants already work:
+**Ask → Retrieve → Visualize → Save → Organize → Recall → Follow up.**
+
 > Built as a portfolio project to demonstrate hybrid RAG + Text-to-SQL
 > orchestration, vector-grounded retrieval, conversational LLM integration,
 > and production-grade engineering practices (idempotent migrations,
@@ -20,8 +26,10 @@ invite-only multi-user authentication with per-user data isolation.
 
 ## Status
 
-Phases 1–5 complete and verified end-to-end. Currently running **v2.12.1**.
-Phase 6 (business case simulation testing) queued.
+Phases 1–5 complete and verified end-to-end. **Phase 6 — business-case
+simulation testing — complete:** four end-to-end demo simulations passing
+after two rounds of stabilization patches. **Deploy-ready; internal target
+Wednesday 2026-06-10.** Currently running **v2.12.1**.
 
 | Phase | Capability | Status |
 |------|------------|--------|
@@ -34,7 +42,8 @@ Phase 6 (business case simulation testing) queued.
 | 5b/c | Endpoint scoping, login UI, CASSIA rename | ✅ shipped |
 | 5c Pass 3 | ChromaDB user isolation (vector metadata + filter) | ✅ shipped |
 | 5 polish | "Also move source session" checkbox | ✅ shipped |
-| 6    | Systematic business-case simulation testing | ⏳ queued |
+| 6    | Business-case simulation testing (4 demo sims) | ✅ complete |
+| Stab. v1+v2 | Chart, routing, guard & recall hardening (see Roadmap) | ✅ applied |
 
 ---
 
@@ -205,7 +214,7 @@ Each incoming question goes through a router that picks one of four paths:
 - **BOTH** — question with numeric and policy components (e.g. "what's our overdue AP and what does the IRS say about late deposits?")
 - **CORE_RECALL** — question about something previously saved
 
-Routing decisions come from a small LLM call plus a list of explicit trigger phrases for `CORE_RECALL` ("what did I save about…", "recall my…"). The router is also aware of which PDFs are uploaded into the current session, so it can prefer RAG when a relevant document is present. The same question can route differently depending on session context (e.g. "Apple net sales" routes to RAG in a session with the 10-K uploaded, but to SQL in a session without it).
+Routing decisions come from a small LLM call plus a list of explicit trigger phrases for `CORE_RECALL` ("what did I save about…", "recall my…"). The router is also aware of which PDFs are uploaded into the current session, so it can prefer RAG when a relevant document is present. The same question can route differently depending on session context (e.g. "Apple net sales" routes to RAG in a session with the 10-K uploaded, but to SQL in a session without it). The router is also aware of structured **uploaded data tables** (CSV/Excel), not just PDFs: a question asking to show, plot, or compare figures or a forecast from an uploaded file routes to **SQL** even when a PDF is also present, while a policy or narrative question still routes to **RAG** (added in pre-deploy stabilization v2).
 
 ### Text-to-SQL
 
@@ -372,22 +381,26 @@ so a glance at the terminal tells you which generation of the code is running.
   ripple in My Core save card, surgical applier script with `.bak` safety
   and idempotent re-run
 
-### Phase 6 — Business-case simulation testing
+### Phase 6 — Business-case simulation testing (complete)
 
-Systematic test pass of 15–20 realistic scenarios across:
-- Month-end close (variance analysis, GL drill-down, P&L commentary)
-- AR follow-up (aging deep-dives, billing partner load, collection priority)
-- IRS deposit questions (penalty thresholds, deposit schedule edges)
-- Mixed RAG+SQL queries
-- Recall continuity across sessions
-- Korean/English bilingual flow
+Four end-to-end demo simulations, each a self-contained story ending in a
+Save → Topic so the next can recall it:
 
-Output is a structured test report — what worked, what surprised, what
-surfaced as bugs, what the architecture's flexibility ceiling looks like.
-Demo recordings come after the bug pass.
+- **Sim 1 — AR year-end cleanup** — upload aging, flag doubtful accounts, save the finding
+- **Sim 2 — Vendor strategy under cash constraint** — dunning email (RAG) + bank/AP data (SQL) + prioritized draft (BOTH)
+- **Sim 3 — Payroll CP220 notice** — the BOTH route computes the late-deposit penalty via a visible CASE SQL, reconciling exactly to the notice
+- **Sim 4 — Quarterly continuity** — logout/login persistence, books + uploaded forecast, three semantic recalls, a synthesized memo (the workspace-identity proof)
+
+All four pass. Two stabilization rounds hardened the path:
+
+- **Stabilization v1** — chart column filter (P1/P1b), BOTH & SQL "unusable result" guards (P2/P2b), action-oriented RAG not-found copy (P3), core-recall 30s timeout (P4), NaN-in-JSON fix
+- **Stabilization v2** — chart numeric detection (P1c), chart axis isolation (P1d), and **router table-awareness** so data/forecast queries on uploaded CSVs route to SQL instead of RAG
 
 ### Beyond
 
+- Cross-database SQL — compare an uploaded forecast against the books in a single query (currently narrated side-by-side; brittle join keys deferred)
+- Core-recall synthesis tuning — suppress the "I have related saves but…" hedge and report a core miss cleanly instead of falling through to a SQL stub
+- Consolidate the P1 / P1b / P1c / P1d chart-filter logic into a single source
 - Email verification flow
 - OAuth providers (Google, GitHub)
 - Per-user RBAC (admin vs viewer)

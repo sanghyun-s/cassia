@@ -1771,6 +1771,15 @@ function sendQuestion(q) {
 // v2 stabilization P1b: mirror backend's _select_chart_columns for the
 // new-message rendering path (where _chart_spec isn't yet populated).
 // History-load path uses _chart_spec from the saved artifact and is unaffected.
+// P1c stabilization: a value is numeric only if the WHOLE value parses as a
+// number. Date strings like "2026-03-27" stay labels (x-axis) instead of
+// being read as the number 2026 and plotted as the chart measure.
+function _p1IsNumericVal(v) {
+  if (v === null || v === undefined || v === '') return false;
+  const s = String(v).trim();
+  return s !== '' && !isNaN(Number(s));
+}
+
 const _P1_PREFERRED_MEASURE_COLS = new Set([
   'balance_due', 'amount', 'debit', 'credit', 'revenue', 'expense',
   'total', 'net_income', 'ytd_total', 'payment_amount',
@@ -1795,7 +1804,7 @@ function _p1SelectChartColumns(columns, rows) {
   const categoricalCols = [];
   columns.forEach(col => {
     const vals = rows.map(r => r[col]).filter(v => v != null && v !== '');
-    const numCount = vals.filter(v => !isNaN(parseFloat(v))).length;
+    const numCount = vals.filter(v => _p1IsNumericVal(v)).length;
     if (vals.length && numCount / vals.length > 0.7) {
       numericCols.push(col);
     } else {
@@ -1838,7 +1847,7 @@ function renderChart(chartType, columns, rows, question) {
 
   columns.forEach(col => {
     const vals = rows.map(r => r[col]).filter(v => v != null && v !== '');
-    const numCount = vals.filter(v => !isNaN(parseFloat(v))).length;
+    const numCount = vals.filter(v => _p1IsNumericVal(v)).length;
     if (numCount / vals.length > 0.7) numericCols.push(col);
     else labelCols.push(col);
   });
@@ -1849,7 +1858,10 @@ function renderChart(chartType, columns, rows, question) {
   const values     = rows.map(r => parseFloat(r[valueCol]) || 0);
 
   let traces = [];
-  let layout  = { ...PLOTLY_LAYOUT, title: { text: question.slice(0,60), font: { color: '#8b949e', size: 12 } } };
+  let layout  = JSON.parse(JSON.stringify(PLOTLY_LAYOUT));
+  layout.title = { text: question.slice(0,60), font: { color: '#8b949e', size: 12 } };
+  const _p1LooksDate = s => /^\d{4}-\d{1,2}-\d{1,2}/.test(String(s == null ? '' : s).trim());
+  const _p1xIsDate = labels.length > 0 && (labels.filter(_p1LooksDate).length / labels.length) > 0.6;
 
   if (chartType === 'pie') {
     traces = [{ type: 'pie', labels, values,
@@ -1903,6 +1915,10 @@ function renderChart(chartType, columns, rows, question) {
                   marker: { color: '#58a6ff' },
                   hovertemplate: '%{x}: %{y:,.0f}<extra></extra>' }];
     }
+  }
+
+  if (chartType !== 'pie') {
+    layout.xaxis = Object.assign({}, layout.xaxis, { type: _p1xIsDate ? 'date' : 'category' });
   }
 
   setTimeout(() => {

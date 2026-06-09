@@ -101,3 +101,9 @@ venv/
 outputs/coreckoner.db
 outputs/sessions/
 outputs/chroma_db/
+
+# local patch backups + caches (2026-06-09)
+*.bak
+__pycache__/
+*.pyc
+.DS_Store

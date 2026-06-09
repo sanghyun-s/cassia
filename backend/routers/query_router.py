@@ -139,6 +139,27 @@ def _get_session_pdf_filenames(session_id: str) -> list:
         return []
 
 
+def _get_session_table_names(session_id: str) -> list:
+    """Return names of queryable uploaded TABLES in this session (target='sql').
+
+    Mirrors _get_session_pdf_filenames so the router knows there is
+    structured uploaded data to query, not only PDF documents.
+    """
+    if not session_id:
+        return []
+    try:
+        from db.session_store import list_uploads
+        uploads = list_uploads(session_id)
+        names = []
+        for u in uploads:
+            if u.get("target") == "sql":
+                names.extend(u.get("table_names") or [])
+        return names
+    except Exception as e:
+        print(f"[query_router] could not fetch session tables: {e}")
+        return []
+
+
 def route_with_keywords(question: str) -> RouteDecision:
     """
     Fast keyword-based routing — no API call needed.
@@ -163,7 +184,8 @@ def route_with_keywords(question: str) -> RouteDecision:
 
 
 def route_with_llm(question: str, llm: ChatOpenAI, history: str = "",
-                   pdf_filenames: list = None) -> RouteDecision:
+                   pdf_filenames: list = None,
+                   table_names: list = None) -> RouteDecision:
     """
     LLM-based routing — more accurate, understands context.
     Primary routing strategy.
@@ -175,11 +197,23 @@ def route_with_llm(question: str, llm: ChatOpenAI, history: str = "",
     uploads_block = ""
     if pdf_filenames:
         files_str = ", ".join(pdf_filenames)
-        uploads_block = (
+        uploads_block += (
             f"IMPORTANT — this session has uploaded PDF document(s): {files_str}.\n"
             f"Questions that could be answered by those documents should be "
             f"classified as 'rag' or 'both', EVEN IF they mention numbers, totals, "
             f"or amounts. A question about figures inside an uploaded PDF is still 'rag'.\n\n"
+        )
+    if table_names:
+        tables_str = ", ".join(table_names)
+        uploads_block += (
+            f"IMPORTANT — this session also has uploaded DATA TABLE(s), queryable "
+            f"as structured data: {tables_str}.\n"
+            f"A request to show, list, plot, chart, or compare rows, figures, "
+            f"amounts, or a forecast/projection FROM an uploaded file, spreadsheet, "
+            f"or CSV is 'sql' (or 'both' if it also needs policy/PDF context).\n"
+            f"PRECEDENCE when both a PDF and a data table are uploaded: a question "
+            f"about a document's narrative, policy, or wording is 'rag'; a question "
+            f"that shows, plots, or compares tabular figures or a forecast is 'sql'.\n\n"
         )
 
     prompt = ROUTER_PROMPT.format(
@@ -233,10 +267,12 @@ def classify_question(question: str, llm: ChatOpenAI = None, history: str = "",
         }
 
     pdf_filenames = _get_session_pdf_filenames(session_id)
+    table_names   = _get_session_table_names(session_id)
 
     if llm:
         decision = route_with_llm(question, llm, history=history,
-                                  pdf_filenames=pdf_filenames)
+                                  pdf_filenames=pdf_filenames,
+                                  table_names=table_names)
         method = "llm"
     else:
         decision = route_with_keywords(question)
