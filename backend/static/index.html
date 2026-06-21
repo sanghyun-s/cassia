@@ -188,7 +188,7 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:1
 .rtype-system_error{background:rgba(248,81,73,.2);color:var(--red);border:1px solid rgba(248,81,73,.4)}
 
 .route-hint{font-size:11px;color:var(--dim)}
-.msg-text{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:11px 14px;line-height:1.65;color:var(--text)}
+.msg-text{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:11px 14px;line-height:1.65;color:var(--text);white-space:pre-wrap}
 .msg-user .msg-text{background:var(--surface2)}
 
 .sql-result{margin-top:10px;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
@@ -573,6 +573,7 @@ async function init() {
 }
 
 function showAuthScreen() {
+  { const _ef = document.getElementById('expFab'); if (_ef) _ef.style.display = 'none'; }
   document.getElementById('authScreen').classList.add('visible');
   document.getElementById('appHeader').style.display = 'none';
   document.getElementById('appLayout').style.display = 'none';
@@ -584,6 +585,7 @@ function showAuthScreen() {
 }
 
 async function showChatUI() {
+  { const _ef = document.getElementById('expFab'); if (_ef) _ef.style.display = 'block'; }
   document.getElementById('authScreen').classList.remove('visible');
   document.getElementById('appHeader').style.display = '';
   document.getElementById('appLayout').style.display = '';
@@ -1519,6 +1521,7 @@ async function loadCoreSaves() {
 }
 
 function renderCoreSaves(saves) {
+  _lastCoreSaves = saves || [];
   const list = document.getElementById('coreSavesList');
   if (!saves.length) {
     list.innerHTML = `
@@ -1541,7 +1544,7 @@ function renderCoreSaves(saves) {
   list.innerHTML = saves.map(s => {
     const kind     = s.kind === 'upload' ? 'upload' : 'message';
     const date     = formatDate(s.created_at);
-    const content  = escHtml(s.content || '');
+    const content  = _expMdInline(escHtml(s.content || ''));
     const title    = escHtml(s.title || '(untitled)');
     return `
       <div class="core-save-card" id="savecard-${s.save_id}">
@@ -1561,6 +1564,8 @@ function renderCoreSaves(saves) {
               Also move source session
             </label>
           </div>
+          <button class="core-save-export" onclick="exportCoreSave('${s.save_id}','md')" title="Export as Markdown">⤓ MD</button>
+          <button class="core-save-export" onclick="exportCoreSave('${s.save_id}','html')" title="Export HTML (print/PDF)">⤓ HTML</button>
           <button class="core-save-archive" onclick="archiveCoreSave('${s.save_id}')" title="Remove from core">Archive</button>
         </div>
       </div>`;
@@ -2047,7 +2052,7 @@ function appendAIMessage(data, ts) {
         ${routeHint}
         ${saveBtn}
       </div>
-      <div class="msg-text">${escHtml(data.answer)}</div>
+      <div class="msg-text">${_expMdInline(escHtml(data.answer))}</div>
     </div>`;
 
   const body = msgEl.querySelector('.msg-body');
@@ -2097,6 +2102,7 @@ function appendAIMessage(data, ts) {
       <div class="sql-header">📊 Query result (${rows.length} row${rows.length!==1?'s':''})</div>
       ${tbl}`;
     body.appendChild(sqlBlock);
+    _expAddCsvButton(sqlBlock, cols, rows);
 
     const spec = data._chart_spec;
     const type = spec ? spec.chart_type : chartHint;
@@ -2120,8 +2126,221 @@ function appendAIMessage(data, ts) {
     body.appendChild(citEl.firstChild);
   }
 
+  _expAddMsgExport(body, data);
   document.getElementById('messages').appendChild(msgEl);
 }
+
+/* CASSIA_EXPORT_MVP — pre-deploy hardening (Issue 1: export/download). Frontend-only, additive. */
+var _lastCoreSaves = [];
+
+function _expDownload(filename, mime, content) {
+  try {
+    const blob = new Blob([content], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1500);
+  } catch (e) {
+    if (typeof showToast === 'function') showToast('error', 'Export failed', e.message || 'Could not create file');
+  }
+}
+function _expSlug(s){return (s||'cassia').toString().toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,60)||'cassia';}
+function _expStamp(){const d=new Date(),p=n=>String(n).padStart(2,'0');return `${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`;}
+function _expEscHtml(s){return (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function _expCellMd(s){return (s==null?'':String(s)).replace(/\|/g,'\\|').replace(/\n/g,' ');}
+function _expCsv(columns, rows){
+  const esc=v=>{const s=(v==null?'':String(v));return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;};
+  return columns.map(esc).join(',')+'\n'+rows.map(r=>columns.map(c=>esc(r[c])).join(',')).join('\n')+'\n';
+}
+function _expAddCsvButton(container, columns, rows){
+  try{
+    if(!columns||!columns.length||!rows||!rows.length) return;
+    const btn=document.createElement('button');
+    btn.className='exp-csv-btn'; btn.textContent='⤓ CSV'; btn.title='Download this table as CSV';
+    btn.onclick=()=>_expDownload('cassia-table-'+_expStamp()+'.csv','text/csv;charset=utf-8',_expCsv(columns,rows));
+    container.appendChild(btn);
+  }catch(e){}
+}
+function _expMsgBlocksMd(messages){
+  const out=[];
+  for(const m of messages){
+    if(m.role==='user'){ out.push(`## You — ${m.timestamp||''}\n\n${m.content||''}\n`); continue; }
+    const arts=m.artifacts||[]; const get=t=>{const a=arts.find(x=>x.artifact_type===t);return a?a.content:null;};
+    const pipe=(m.pipeline_used||'sql').toUpperCase();
+    let b=`## CASSIA — ${m.timestamp||''} · ${pipe}\n\n${m.content||''}\n`;
+    const sql=get('sql_query'), res=get('sql_result'), cits=get('citations');
+    if(sql) b+=`\n**Generated SQL**\n\n\`\`\`sql\n${sql}\n\`\`\`\n`;
+    if(res&&res.columns&&res.rows&&res.rows.length){
+      const cols=res.columns, rows=res.rows;
+      b+=`\n**Result (${rows.length} row${rows.length!==1?'s':''})**\n\n`;
+      b+='| '+cols.map(_expCellMd).join(' | ')+' |\n';
+      b+='| '+cols.map(()=>'---').join(' | ')+' |\n';
+      rows.forEach(r=>{ b+='| '+cols.map(c=>_expCellMd(r[c])).join(' | ')+' |\n'; });
+    }
+    if(cits&&cits.length){ b+=`\n**Sources**\n\n`; cits.forEach(s=>{ b+=`- Page ${s.page}: ${(s.preview||'').replace(/\n/g,' ')}…\n`; }); }
+    out.push(b);
+  }
+  return out.join('\n---\n\n');
+}
+function _expMsgBlocksHtml(messages){
+  const esc=_expEscHtml; const parts=[];
+  for(const m of messages){
+    if(m.role==='user'){ parts.push(`<section class="u"><h3>You <span>${esc(m.timestamp)}</span></h3><div class="t">${esc(m.content)}</div></section>`); continue; }
+    const arts=m.artifacts||[]; const get=t=>{const a=arts.find(x=>x.artifact_type===t);return a?a.content:null;};
+    const pipe=esc((m.pipeline_used||'sql').toUpperCase());
+    let h=`<section class="a"><h3>CASSIA <span>${esc(m.timestamp)} · ${pipe}</span></h3><div class="t">${esc(m.content)}</div>`;
+    const sql=get('sql_query'), res=get('sql_result'), cits=get('citations');
+    if(sql) h+=`<div class="sql"><b>Generated SQL</b><pre>${esc(sql)}</pre></div>`;
+    if(res&&res.columns&&res.rows&&res.rows.length){
+      const cols=res.columns, rows=res.rows;
+      h+=`<div class="res"><b>Result (${rows.length} rows)</b><table><thead><tr>`;
+      cols.forEach(c=>{ h+=`<th>${esc(c)}</th>`; }); h+=`</tr></thead><tbody>`;
+      rows.forEach(r=>{ h+='<tr>'+cols.map(c=>`<td>${esc(r[c])}</td>`).join('')+'</tr>'; });
+      h+=`</tbody></table></div>`;
+    }
+    if(cits&&cits.length){ h+=`<div class="src"><b>Sources</b><ul>`; cits.forEach(s=>{ h+=`<li>Page ${esc(s.page)}: ${esc(s.preview||'')}…</li>`; }); h+=`</ul></div>`; }
+    h+=`</section>`; parts.push(h);
+  }
+  return parts.join('\n');
+}
+function _expHtmlDoc(title, metaLine, bodyHtml){
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${_expEscHtml(title)}</title>
+<style>
+body{font-family:-apple-system,Segoe UI,Arial,sans-serif;color:#1a2233;max-width:820px;margin:32px auto;padding:0 20px;line-height:1.55}
+h1{font-size:22px;margin:0 0 4px}.meta{color:#667;font-size:12px;margin:0 0 18px;border-bottom:2px solid #1f5f63;padding-bottom:10px}
+section{margin:0 0 16px;page-break-inside:avoid}h3{font-size:13px;margin:0 0 4px;color:#1f5f63}h3 span{color:#889;font-weight:normal;font-size:11px}
+.t{white-space:pre-wrap;margin:0 0 6px}pre{background:#f4f6f8;padding:8px 10px;border-radius:6px;white-space:pre-wrap;font-size:12px}
+table{border-collapse:collapse;font-size:12px;margin:6px 0}th,td{border:1px solid #dde;padding:4px 8px;text-align:left}th{background:#eef4f4}
+.src ul{margin:4px 0;padding-left:18px;font-size:12px;color:#445}.sql,.res,.src{margin:6px 0}
+@media print{body{margin:0;max-width:none}}
+</style></head><body>
+<h1>${_expEscHtml(title)}</h1><div class="meta">${_expEscHtml(metaLine)}</div>
+${bodyHtml}
+</body></html>`;
+}
+async function _expFetchSession(){
+  if(!activeSessionId){ if(typeof showToast==='function') showToast('error','Nothing to export','Open a session first.'); return null; }
+  try{ const r=await apiFetch(`/sessions/${activeSessionId}`); if(!r.ok) throw new Error('fetch failed'); return await r.json(); }
+  catch(e){ if(typeof showToast==='function') showToast('error','Export failed','Could not load the session.'); return null; }
+}
+function _expSessionMeta(){
+  let title='CASSIA session';
+  const el=document.getElementById(`sess-${activeSessionId}`);
+  if(el){ const t=el.querySelector('.session-title')||el.querySelector('.sess-title'); if(t&&t.textContent) title=t.textContent.trim(); }
+  return { title };
+}
+async function exportSession(fmt){
+  const data=await _expFetchSession(); if(!data) return;
+  const messages=data.messages||[]; const meta=_expSessionMeta();
+  const title=(data.title||meta.title||'CASSIA session');
+  const topic=(data.topic||data.topic_name||'');
+  const metaLine=`Topic: ${topic||'Unsorted'} · Exported ${new Date().toLocaleString()} · ${messages.length} messages`;
+  const base=`cassia-session-${_expSlug(title)}-${_expStamp()}`;
+  if(fmt==='html'){ _expDownload(base+'.html','text/html;charset=utf-8',_expHtmlDoc(title,metaLine,_expMsgBlocksHtml(messages))); }
+  else { _expDownload(base+'.md','text/markdown;charset=utf-8',`# ${title}\n\n*${metaLine}*\n\n---\n\n${_expMsgBlocksMd(messages)}\n`); }
+  if(typeof showToast==='function') showToast('core','Session exported',base+'.'+(fmt==='html'?'html':'md'));
+}
+function exportCoreSave(saveId, fmt){
+  const s=(_lastCoreSaves||[]).find(x=>String(x.save_id)===String(saveId));
+  if(!s){ if(typeof showToast==='function') showToast('error','Export failed','Save not found — reopen Core and retry.'); return; }
+  const title=s.title||'(untitled)';
+  const metaLine=`Saved ${typeof formatDate==='function'?formatDate(s.created_at):(s.created_at||'')} · ${s.kind||'message'}`;
+  const base=`cassia-save-${_expSlug(title)}-${_expStamp()}`;
+  if(fmt==='html'){ const bodyHtml=`<section class="a"><h3>${_expEscHtml(title)} <span>${_expEscHtml(metaLine)}</span></h3><div class="t">${_expEscHtml(s.content||'')}</div></section>`; _expDownload(base+'.html','text/html;charset=utf-8',_expHtmlDoc(title,metaLine,bodyHtml)); }
+  else { _expDownload(base+'.md','text/markdown;charset=utf-8',`# ${title}\n\n*${metaLine}*\n\n---\n\n${s.content||''}\n`); }
+  if(typeof showToast==='function') showToast('core','Save exported',base+'.'+(fmt==='html'?'html':'md'));
+}
+(function _expInit(){
+  try{
+    const css=document.createElement('style');
+    css.textContent=`
+.exp-csv-btn{margin-top:8px;background:var(--surface2,#1b2433);border:1px solid var(--border,#2b3650);color:var(--text,#dfe7ea);font-size:11px;padding:3px 9px;border-radius:6px;cursor:pointer;font-family:var(--mono,monospace)}
+.exp-csv-btn:hover{background:var(--surface3,#243049)}
+.core-save-export{background:none;border:1px solid var(--border,#2b3650);color:var(--dim,#8a98a8);font-size:11px;padding:2px 8px;border-radius:5px;cursor:pointer;margin-right:4px}
+.core-save-export:hover{color:var(--text,#dfe7ea)}
+#expFab{position:fixed;right:18px;bottom:18px;z-index:300;display:none}
+#expFab>#expFabBtn{background:var(--surface,#141a26);border:1px solid var(--border,#2b3650);color:var(--text,#dfe7ea);font-size:12px;padding:8px 12px;border-radius:20px;cursor:pointer;box-shadow:0 3px 12px rgba(0,0,0,.3)}
+#expFab>#expFabBtn:hover{background:var(--surface2,#1b2433)}
+#expMenu{position:absolute;right:0;bottom:44px;background:var(--surface,#141a26);border:1px solid var(--border,#2b3650);border-radius:8px;padding:4px;display:none;box-shadow:0 4px 16px rgba(0,0,0,.35);min-width:190px}
+#expMenu.open{display:block}
+#expMenu button{display:block;width:100%;text-align:left;background:none;border:none;color:var(--text,#dfe7ea);padding:7px 10px;font-size:12px;border-radius:5px;cursor:pointer}
+#expMenu button:hover{background:var(--surface2,#1b2433)}`;
+    document.head.appendChild(css);
+    const fab=document.createElement('div'); fab.id='expFab';
+    fab.innerHTML=`<div id="expMenu">
+        <button onclick="exportSession('md');document.getElementById('expMenu').classList.remove('open')">Session → Markdown (.md)</button>
+        <button onclick="exportSession('html');document.getElementById('expMenu').classList.remove('open')">Session → HTML (print / PDF)</button>
+      </div><button id="expFabBtn" title="Export this session">⤓ Export</button>`;
+    document.body.appendChild(fab);
+    document.getElementById('expFabBtn').addEventListener('click',e=>{ e.stopPropagation(); document.getElementById('expMenu').classList.toggle('open'); });
+    document.addEventListener('click',()=>{ const m=document.getElementById('expMenu'); if(m) m.classList.remove('open'); });
+  }catch(e){}
+})();
+/* END CASSIA_EXPORT_MVP */
+
+/* CASSIA_EXPORT_POLISH — Issue 2 bold-render + per-answer export. Additive, frontend-only. */
+function _expMdInline(s){
+  // input is already HTML-escaped; render **bold** as <strong>. Single-line only, safe.
+  return String(s).replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
+}
+function _expSingleMd(data){
+  let b=(data.answer||'');
+  if(data.sql) b+=`\n\n**Generated SQL**\n\n\`\`\`sql\n${data.sql}\n\`\`\``;
+  if(data.raw_data&&data.raw_data.length&&data.columns){
+    const cols=data.columns, rows=data.raw_data;
+    b+=`\n\n**Result (${rows.length} row${rows.length!==1?'s':''})**\n\n`;
+    b+='| '+cols.map(_expCellMd).join(' | ')+' |\n';
+    b+='| '+cols.map(()=>'---').join(' | ')+' |\n';
+    rows.forEach(r=>{ b+='| '+cols.map(c=>_expCellMd(r[c])).join(' | ')+' |\n'; });
+  }
+  if(data.sources&&data.sources.length){
+    b+=`\n\n**Sources**\n\n`;
+    data.sources.forEach(s=>{ b+=`- Page ${s.page}: ${(s.preview||'').replace(/\n/g,' ')}…\n`; });
+  }
+  return b;
+}
+function _expSingleHtml(data){
+  const esc=_expEscHtml;
+  let h=`<div class="t">${_expMdInline(esc(data.answer||''))}</div>`;
+  if(data.sql) h+=`<div class="sql"><b>Generated SQL</b><pre>${esc(data.sql)}</pre></div>`;
+  if(data.raw_data&&data.raw_data.length&&data.columns){
+    const cols=data.columns, rows=data.raw_data;
+    h+=`<div class="res"><b>Result (${rows.length} rows)</b><table><thead><tr>`;
+    cols.forEach(c=>{ h+=`<th>${esc(c)}</th>`; }); h+=`</tr></thead><tbody>`;
+    rows.forEach(r=>{ h+='<tr>'+cols.map(c=>`<td>${esc(r[c])}</td>`).join('')+'</tr>'; });
+    h+=`</tbody></table></div>`;
+  }
+  if(data.sources&&data.sources.length){
+    h+=`<div class="src"><b>Sources</b><ul>`; data.sources.forEach(s=>{ h+=`<li>Page ${esc(s.page)}: ${esc(s.preview||'')}…</li>`; }); h+=`</ul></div>`;
+  }
+  return h;
+}
+function exportSingleMessage(data, fmt){
+  if(!data||!data.answer){ if(typeof showToast==='function') showToast('error','Nothing to export','This answer is empty.'); return; }
+  const answer=(data.answer||'').trim();
+  const firstLine=(answer.split('\n')[0]||'CASSIA answer').slice(0,60);
+  const title=firstLine||'CASSIA answer';
+  const metaLine=`CASSIA answer · ${(data.pipeline||'sql').toUpperCase()} · Exported ${new Date().toLocaleString()}`;
+  const base=`cassia-answer-${_expSlug(title)}-${_expStamp()}`;
+  if(fmt==='html'){ _expDownload(base+'.html','text/html;charset=utf-8',_expHtmlDoc(title,metaLine,_expSingleHtml(data))); }
+  else { _expDownload(base+'.md','text/markdown;charset=utf-8',`# ${title}\n\n*${metaLine}*\n\n---\n\n${_expSingleMd(data)}\n`); }
+  if(typeof showToast==='function') showToast('core','Answer exported',base+'.'+(fmt==='html'?'html':'md'));
+}
+function _expAddMsgExport(body, data){
+  try{
+    if(!data||!data.answer) return;
+    if((data.answer||'').length < 160) return;  // keep short answers uncluttered
+    const foot=document.createElement('div'); foot.style.marginTop='8px';
+    const mk=(label,fmt)=>{ const b=document.createElement('button'); b.className='exp-csv-btn'; b.style.marginRight='6px'; b.textContent=label; b.title='Export just this answer'; b.onclick=()=>exportSingleMessage(data,fmt); return b; };
+    foot.appendChild(mk('⤓ MD','md')); foot.appendChild(mk('⤓ HTML','html'));
+    body.appendChild(foot);
+  }catch(e){}
+}
+/* END CASSIA_EXPORT_POLISH */
+
+
+
 
 function appendError(msg) {
   const el = document.createElement('div');
