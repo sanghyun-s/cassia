@@ -44,6 +44,7 @@ Wednesday 2026-06-10.** Currently running **v2.12.1**.
 | 5 polish | "Also move source session" checkbox | ✅ shipped |
 | 6    | Business-case simulation testing (4 demo sims) | ✅ complete |
 | Stab. v1+v2 | Chart, routing, guard & recall hardening (see Roadmap) | ✅ applied |
+| Pre-deploy hardening | Export (MD/HTML/CSV), long-form readability, SSN/EIN masking, security docs | ✅ applied |
 
 ---
 
@@ -68,6 +69,9 @@ Ask plain-English questions and get answers grounded in real data.
 
 **Recall by natural language** (semantic search over saves):
 > *"What did I save about net income?"* → returns your saved Q1 analysis with relevance scores, even months later in a different session
+
+**Export and follow-up** (Markdown / print-HTML / CSV):
+> Export a whole session, a single answer, or a Core save as Markdown or print-friendly HTML (Cmd-P → PDF); download any result table as CSV. Citations and generated SQL are preserved. Optional **SSN/EIN masking** hides sensitive identifiers in both the on-screen view and exports.
 
 **Multi-user with per-user isolation:**
 > Invite-only signup; every session, save, upload, and vector belongs to a single user. Defense in depth at both the API layer and the vector store layer.
@@ -395,6 +399,15 @@ All four pass. Two stabilization rounds hardened the path:
 
 - **Stabilization v1** — chart column filter (P1/P1b), BOTH & SQL "unusable result" guards (P2/P2b), action-oriented RAG not-found copy (P3), core-recall 30s timeout (P4), NaN-in-JSON fix
 - **Stabilization v2** — chart numeric detection (P1c), chart axis isolation (P1d), and **router table-awareness** so data/forecast queries on uploaded CSVs route to SQL instead of RAG
+
+### Pre-deployment hardening (complete)
+
+A follow-up-readiness pass driven by business-operator feedback:
+
+- **Export / download** — session, single answer, and Core save → Markdown or print-friendly HTML; result tables → CSV; citations and generated SQL preserved
+- **Long-form readability** — memos, letters, and emails render with paragraph structure; `**bold**` rendered in chat and Core previews
+- **Sensitive-data MVP** — heuristic SSN/EIN detection with a warning, and an optional mask toggle applied to both view and exports (a display-level aid, **not** encryption)
+- **Security-model documentation** — single-user workspace isolation stated honestly; encrypted export, MFA, organization/team RBAC, and audit logging scoped as Phase 7 (see "Security & data handling")
 
 ### Beyond
 
