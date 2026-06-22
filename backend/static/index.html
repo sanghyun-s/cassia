@@ -2127,6 +2127,7 @@ function appendAIMessage(data, ts) {
   }
 
   _expAddMsgExport(body, data);
+  _sensProcess(body, data.answer);
   document.getElementById('messages').appendChild(msgEl);
 }
 
@@ -2134,6 +2135,7 @@ function appendAIMessage(data, ts) {
 var _lastCoreSaves = [];
 
 function _expDownload(filename, mime, content) {
+  if (typeof _sensMaskOn !== 'undefined' && _sensMaskOn && typeof content === 'string') content = _sensMask(content);
   try {
     const blob = new Blob([content], { type: mime });
     const url = URL.createObjectURL(blob);
@@ -2338,6 +2340,81 @@ function _expAddMsgExport(body, data){
   }catch(e){}
 }
 /* END CASSIA_EXPORT_POLISH */
+
+/* CASSIA_SENSITIVE_MVP — Issue 3: SSN/EIN detection, warning, optional masking.
+   Additive, frontend-only. Heuristic display/export aid — NOT encryption. */
+var _sensMaskOn = false;
+
+function _sensHasPII(text){
+  if(!text) return false;
+  const s=String(text);
+  return /\b\d{3}-\d{2}-\d{4}\b/.test(s) || /\b\d{2}-\d{7}\b/.test(s);
+}
+function _sensMask(text){
+  if(text==null) return text;
+  return String(text)
+    .replace(/\b(\d{3})-(\d{2})-(\d{4})\b/g, function(m,a,b,c){ return '***-**-'+c; })   // SSN -> ***-**-1234
+    .replace(/\b(\d{2})-(\d{7})\b/g, function(m,a,b){ return '**-***'+b.slice(-4); });    // EIN -> **-***6789
+}
+function _sensProcess(body, answer){
+  try{
+    if(_sensHasPII(answer)){
+      const chip=document.createElement('div');
+      chip.className='sens-chip';
+      chip.innerHTML='<span class="sens-ico">⚠</span> Possible SSN/EIN detected — turn on “Mask SSN/EIN” to hide it in view and exports.';
+      body.appendChild(chip);
+    }
+    if(_sensMaskOn){
+      const t=body.querySelector('.msg-text');
+      if(t){ if(t.dataset.sensOrig==null) t.dataset.sensOrig=t.innerHTML; t.innerHTML=_sensMask(t.dataset.sensOrig); }
+    }
+  }catch(e){}
+}
+function _sensApplyViewMask(){
+  try{
+    document.querySelectorAll('.msg-text, .core-save-content').forEach(function(t){
+      if(_sensMaskOn){ if(t.dataset.sensOrig==null) t.dataset.sensOrig=t.innerHTML; t.innerHTML=_sensMask(t.dataset.sensOrig); }
+      else if(t.dataset.sensOrig!=null){ t.innerHTML=t.dataset.sensOrig; }
+    });
+  }catch(e){}
+}
+function _sensToggleMask(){
+  _sensMaskOn=!_sensMaskOn;
+  const lbl=document.getElementById('sensMaskState'); if(lbl) lbl.textContent=_sensMaskOn?'ON':'OFF';
+  const item=document.getElementById('sensMaskToggle'); if(item) item.classList.toggle('on',_sensMaskOn);
+  _sensApplyViewMask();
+  if(typeof showToast==='function') showToast('core', _sensMaskOn?'Masking on':'Masking off', _sensMaskOn?'SSN/EIN hidden in view and exports.':'Showing original values.');
+}
+(function _sensInit(){
+  try{
+    const css=document.createElement('style');
+    css.textContent=`
+.sens-chip{margin-top:8px;display:inline-block;background:rgba(214,158,46,.12);border:1px solid rgba(214,158,46,.5);color:#d69e2e;font-size:11px;padding:4px 9px;border-radius:6px;line-height:1.4}
+.sens-ico{font-weight:bold;margin-right:3px}
+#sensMaskToggle{display:flex;align-items:center;justify-content:space-between;gap:10px}
+#sensMaskToggle.on{color:#d69e2e}
+#sensMaskState{font-family:var(--mono,monospace);font-size:10px;opacity:.85}
+#expMenu .sens-sep{border-top:1px solid var(--border,#2b3650);margin:4px 0}
+#expMenu .sens-note{font-size:10px;color:var(--dim,#8a98a8);padding:6px 10px 4px;line-height:1.4}`;
+    document.head.appendChild(css);
+    const menu=document.getElementById('expMenu');
+    if(menu){
+      menu.insertAdjacentHTML('beforeend',
+        '<div class="sens-sep"></div>'+
+        '<button id="sensMaskToggle" onclick="_sensToggleMask()" title="Mask SSN/EIN in view and exports">🔒 Mask SSN/EIN <span id="sensMaskState">OFF</span></button>'+
+        '<div class="sens-note">Demo: don’t paste or upload real SSNs, payroll, or confidential client files unless this deployment is secured.</div>');
+    }
+    const fi=document.getElementById('fileInput');
+    if(fi){
+      fi.addEventListener('change', function _once(){
+        if(typeof showToast==='function') showToast('core','Demo environment — handle PII carefully','Avoid uploading real SSNs, payroll records, or confidential client files unless this deployment is secured.');
+        fi.removeEventListener('change', _once);
+      });
+    }
+  }catch(e){}
+})();
+/* END CASSIA_SENSITIVE_MVP */
+
 
 
 

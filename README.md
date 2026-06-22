@@ -423,3 +423,52 @@ Built incrementally with extensive use of Anthropic's Claude as a pair
 programmer. All architectural decisions, debugging, and integration work
 were collaborative. Phase notes in `docs/` reflect the actual cadence
 of design conversations and trade-off decisions.
+
+
+<!-- CASSIA_SECURITY_MODEL -->
+## Security & data handling
+
+CASSIA's current security model is **single-user workspace isolation**. It is
+designed for one authenticated user per account working with their own
+materials; it is not (yet) a multi-tenant team product.
+
+### Implemented today
+
+- **Invite-only sign-up** and authenticated login with per-user sessions.
+- **Per-user isolation** of all data: sessions, chat history, saved Core items,
+  topics, and uploads belong to the account that created them.
+- **Scoped retrieval:** document and vector lookups are filtered by `user_id`
+  and `session_id`, so one user's uploads and saved findings are not visible to
+  another.
+- **Sensitive-identifier awareness (heuristic):** CASSIA detects dashed SSN
+  (`###-##-####`) and EIN (`##-#######`) patterns in answers and warns the user,
+  and offers an optional **Mask SSN/EIN** toggle that hides them in the
+  on-screen view and in all exports (`***-**-1234`, `**-***6789`). This is a
+  convenience aid for handling demonstration data — **it is not encryption.**
+
+### NOT implemented (do not assume)
+
+- **No encryption at rest.** Original files, extracted text, vector chunks,
+  saved items, and exports are stored unencrypted. Masking affects display and
+  export output only, never stored data.
+- **No organization / team roles or permissions (RBAC).** There are no
+  organizations, workspaces, memberships, roles (owner / admin / member /
+  viewer), shared sessions, or per-resource access control. Anyone who can
+  authenticate to an account can see everything in that account.
+- **No persistent "sensitive" lock, audit log, or access review.**
+
+### Use guidance
+
+Until the items above exist, **do not upload real SSNs, payroll records, or
+other confidential client documents** unless the deployment environment is
+independently secured (encrypted storage, controlled access, and an appropriate
+data-processing agreement).
+
+### Roadmap → Phase 7 (post-deployment hardening)
+
+- Encryption at rest across files, extracted text, vector chunks, saves, and
+  exports, with proper key management.
+- Organization / team RBAC: workspaces, memberships, roles, resource sharing,
+  permission checks across all endpoints, and an audit log.
+- Persistent per-session / per-save "sensitive" lock with confirm-on-open.
+<!-- /CASSIA_SECURITY_MODEL -->
