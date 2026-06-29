@@ -17,6 +17,7 @@ chromadb==0.5.5
 
 # ── Structured Data ────────────────────────────────────────
 pandas==2.2.2
+openpyxl==3.1.5               # pandas engine for .xlsx uploads (uploads/tabular.py)
 
 # ── OpenAI ─────────────────────────────────────────────────
 openai>=1.58.1

@@ -10,8 +10,7 @@ __pycache__/
 venv/
 env/
 outputs/          # rebuilt during image build (accounting.db + chroma_db)
-demo_uploads/
-backend/uploads/
+demo_uploads/     # sample upload files, not imported
 docs/
 *.md
 *.log
