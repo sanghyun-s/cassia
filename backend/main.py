@@ -40,7 +40,9 @@ dependency lands on ~17 endpoints. Routes that DON'T require auth:
 """
 
 import os
+import sys
 import json
+import subprocess
 from utils.json_safe import safe_json_dumps
 import logging
 import sqlite3
@@ -125,12 +127,45 @@ DB_PATH      = PROJECT_ROOT / "outputs" / "accounting.db"
 CHROMA_DIR   = PROJECT_ROOT / "outputs" / "chroma_db"
 
 
+def _ensure_seed_data():
+    """Build the demo SQLite DB and Chroma vector store if they're missing.
+
+    Normally these are baked into the Docker image at build time. This is a
+    self-healing fallback: on a fresh/ephemeral filesystem (e.g. a free-tier
+    host that didn't bake the vector store) the seed is rebuilt on first boot
+    from the committed source files in data/. Chroma embedding needs
+    OPENAI_API_KEY and costs a few cents + a couple of minutes — it runs once.
+    """
+    if not DB_PATH.exists():
+        print("  ⏳ accounting.db missing — building from data/ CSVs ...")
+        subprocess.run(
+            [sys.executable, str(PROJECT_ROOT / "sql" / "phase1_load.py")],
+            check=True,
+        )
+    if not CHROMA_DIR.exists():
+        if not os.getenv("OPENAI_API_KEY"):
+            print("  ⚠ chroma_db missing and no OPENAI_API_KEY — RAG will fail "
+                  "until the vector store is built.")
+        else:
+            print("  ⏳ chroma_db missing — embedding data/ PDFs (one-time) ...")
+            subprocess.run(
+                [sys.executable, str(PROJECT_ROOT / "rag" / "phase1_ingest.py")],
+                check=True,
+            )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print("\n" + "═" * 52)
     print("  CASSIA — Accounting AI Chatbot")
     print("  v2.12.1 · Phase 5b/c (auth-required)")
     print("═" * 52)
+
+    try:
+        _ensure_seed_data()
+    except Exception as e:
+        print(f"  ⚠ seed-data build failed: {e}")
+
     try:
         init_db()
         print("  ✓ coreckoner.db initialised")
@@ -182,9 +217,18 @@ app = FastAPI(
 #   - allow_credentials=True  (so browser sends our HttpOnly cookie)
 #   - allow_origins to be an explicit list (NOT "*") because browsers
 #     refuse to send credentials to wildcard origins.
+# In production the frontend is served by this same app (same origin), so CORS
+# isn't normally exercised. ALLOWED_ORIGINS (comma-separated) lets a deployment
+# add its public URL if the frontend is ever hosted elsewhere. Defaults to the
+# local dev origin.
+_allowed_origins = [
+    o.strip()
+    for o in os.getenv("ALLOWED_ORIGINS", "http://localhost:8002").split(",")
+    if o.strip()
+]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins     = ["http://localhost:8002"],
+    allow_origins     = _allowed_origins,
     allow_credentials = True,
     allow_methods     = ["*"],
     allow_headers     = ["*"],

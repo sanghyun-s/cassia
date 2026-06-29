@@ -1,0 +1,30 @@
+# Render deployment config for CASSIA (Accounting AI Chatbot)
+# -----------------------------------------------------------------------------
+# Connect this repo at https://dashboard.render.com → New → Blueprint.
+#
+# Secrets to set in the dashboard after the first deploy (Service → Environment):
+#   OPENAI_API_KEY      — required (GPT-4o-mini + embeddings). Set it as a
+#                         BUILD-time var too if you want chroma_db baked into
+#                         the image; otherwise it builds on first boot.
+#   SIGNUP_INVITE_CODE  — required for user signup to be enabled.
+#
+# Notes:
+#   * Free tier sleeps after ~15 min idle and has an ephemeral disk: the demo
+#     data is rebuilt from the image on restart, and user accounts
+#     (coreckoner.db) reset on every redeploy. For persistence, use a paid
+#     instance with a Persistent Disk mounted at /app/outputs.
+#   * COOKIE_SECURE=true is required so auth cookies work over HTTPS.
+
+services:
+  - type: web
+    name: cassia
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    envVars:
+      - key: OPENAI_API_KEY
+        sync: false           # set manually in the dashboard (Secret)
+      - key: SIGNUP_INVITE_CODE
+        sync: false           # set manually in the dashboard (Secret)
+      - key: COOKIE_SECURE
+        value: "true"         # HTTPS in production → secure cookies

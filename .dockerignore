@@ -1,0 +1,18 @@
+# Keep the image lean and never bake secrets/local runtime state into it.
+.git
+.gitignore
+.env
+.env.*
+!.env.example
+*.pyc
+__pycache__/
+.venv/
+venv/
+env/
+outputs/          # rebuilt during image build (accounting.db + chroma_db)
+demo_uploads/
+backend/uploads/
+docs/
+*.md
+*.log
+.DS_Store
