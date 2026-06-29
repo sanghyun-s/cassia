@@ -1,6 +1,11 @@
 # ── Web Framework ──────────────────────────────────────────
 fastapi==0.115.0
 uvicorn==0.30.6
+python-multipart==0.0.20      # required for UploadFile/File/Form (upload routes)
+
+# ── Auth (cookie sessions + password hashing) ──────────────
+passlib==1.7.4
+bcrypt>=4.0.1,<5.0.0          # bcrypt 5.x breaks passlib 1.7.4 version detection
 
 # ── LangChain ──────────────────────────────────────────────
 langchain==0.3.14
