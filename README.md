@@ -31,8 +31,7 @@ tools). The workflow mirrors how accountants already work:
 
 Phases 1–5 complete and verified end-to-end. **Phase 6 — business-case
 simulation testing — complete:** four end-to-end demo simulations passing
-after two rounds of stabilization patches. **Deploy-ready; internal target
-Wednesday 2026-06-10.** Currently running **v2.12.1**.
+after two rounds of stabilization patches. **Deployed** (Render, no-login) 2026-06-28; **login removed 2026-07-01**. Currently running **v2.12.1**.
 
 | Phase | Capability | Status |
 |------|------------|--------|
@@ -87,7 +86,7 @@ Ask plain-English questions and get answers grounded in real data.
 ## Architecture
 
 ```
-                                USER QUESTION (via authenticated session)
+                                USER QUESTION (anonymous per-browser session)
                                           │
                                           ▼
               QUERY ROUTER  (history-aware, PDF-aware, recall-aware)
@@ -113,11 +112,11 @@ Ask plain-English questions and get answers grounded in real data.
         text + Plotly chart (SQL) + citations (RAG) + sources (recall)
                                      │
                                      ▼
-                  FastAPI on port 8002, behind auth dependency
-       Dark-themed chat UI: login screen · topic-grouped sidebar ·
+                  FastAPI on port 8002 · anonymous identity middleware
+       Dark-themed chat UI (no login) · topic-grouped sidebar ·
        💾 save · 🗄 My Core modal · "Also move source session" opt-in
 
-   PERSISTENCE (SQLite — coreckoner.db)        AUTH (Phase 5a–c)
+   PERSISTENCE (SQLite — coreckoner.db)        AUTH (Phase 5 — dormant)
    ├─ sessions  (+user_id, topic_id)           ├─ users (bcrypt password_hash)
    ├─ messages  + artifacts                    ├─ auth_sessions (cookie tokens)
    ├─ uploads   (+user_id, summary_json)       └─ HttpOnly + SameSite cookies,
@@ -266,14 +265,21 @@ Sessions can be assigned to a topic via the sidebar's 📁 menu. Topics share th
 
 In My Core, moving a save's topic now has an opt-in checkbox: **"Also move source session"**. Unchecked by default (preserves the independence model). Checked → both the save and its originating chat session move to the same topic in a single gesture (Phase 5 polish).
 
-### Authentication
+### Authentication — dormant (no-login deployment)
+<!-- CASSIA_NOLOGIN_DOCS_V2 -->
+> **Frozen as of 2026-07-01.** The deployed app requires no login. The
+> endpoints below are retired — `/auth/signup`, `/auth/login`, and
+> `/auth/logout` return **410 Gone**, and `/auth/me` returns the current
+> **anonymous** user (200, never 401). Identity comes from an anonymous
+> per-browser cookie, not an account. The spec below is retained as a
+> record of the built-but-off account system.
 
 Server-side session cookies via `passlib[bcrypt]`:
 
 - **`POST /auth/signup`** — invite-only (requires `SIGNUP_INVITE_CODE` env var); email required, username optional (case-insensitive uniqueness on both). First real signup claims any pre-existing demo data.
 - **`POST /auth/login`** — accepts email OR username (case-insensitive lookup)
 - **`POST /auth/logout`** — server-side session deletion + cookie clear
-- **`GET /auth/me`** — current user or 401
+- **`GET /auth/me`** — returns the current anonymous user (200; formerly 401 when logged out)
 
 Cookies are HttpOnly, SameSite=Lax, with 30-day expiration and sliding renewal on every authenticated request. Every endpoint serving user data requires the `current_user` dependency — there are no anonymous data endpoints. Ownership-check helpers return **404 (not 403)** on mismatch so resource existence isn't leaked to unauthorized callers.
 
@@ -299,12 +305,12 @@ app2/
 │   └── chroma_db/                               # vector store
 ├── backend/
 │   ├── main.py                                  # FastAPI app + endpoints
-│   ├── auth.py                                  # Phase 5a auth primitives
+│   ├── auth.py                                  # auth primitives (dormant — no-login deploy)
 │   ├── db/
 │   │   ├── session_store.py                     # CRUD for coreckoner.db
-│   │   ├── auth_migrations.py                   # Phase 5a schema changes
-│   │   ├── auth_queries.py                      # Phase 5a user/session ops
-│   │   └── auth_reclaim.py                      # first-signup claim logic
+│   │   ├── auth_migrations.py                   # auth schema (dormant)
+│   │   ├── auth_queries.py                      # auth user/session ops (dormant)
+│   │   └── auth_reclaim.py                      # first-signup claim logic (dormant)
 │   ├── pipelines/
 │   │   ├── sql_pipeline.py                      # Text-to-SQL
 │   │   ├── rag_pipeline.py                      # dual-collection RAG + user filter
@@ -314,7 +320,7 @@ app2/
 │   ├── routers/
 │   │   ├── query_router.py                      # hybrid router
 │   │   ├── upload_router.py                     # file ingest endpoints
-│   │   └── auth_router.py                       # Phase 5a auth endpoints
+│   │   └── auth_router.py                       # auth endpoints (dormant — return 410)
 │   ├── uploads/                                 # ingest workers (user-aware)
 │   ├── scripts/                                 # one-off maintenance scripts
 │   │   ├── backfill_session_titles.py
@@ -360,6 +366,16 @@ cp file.py file.py.bak
 For Phase 5 Pass 3 and Pass 5, applier scripts (`backend/scripts/`)
 automate this pattern with all-or-nothing semantics and idempotent re-runs.
 
+### No-login deployment (2026-07-01)
+The public deployment runs with **no login**: the server opens straight to
+the chat workspace and issues an anonymous per-browser identity. This was a
+deliberate go-to-market decision — a name/email gate in front of a free
+tool suppresses adoption, so removing it lowers the barrier to first use.
+The full account system is retained in the codebase but frozen (see
+Authentication), so accounts can be re-enabled if the product later needs
+teams or per-user sign-in. Nothing was deleted — identity was rewired from
+"account" to "anonymous browser cookie."
+
 ### Versioning in the banner
 
 The startup banner always shows the current version (e.g. `v2.12.1 · no-login · anonymous workspace`)
@@ -368,6 +384,13 @@ so a glance at the terminal tells you which generation of the code is running.
 ---
 
 ## Roadmap
+
+### 2026-07-01 — Login removed for deployment ✅
+Authentication retired for the public deploy to lower the barrier to access:
+anonymous per-browser identity, `/auth/*` endpoints return 410, login UI
+removed. The Phase 5 account stack remains in the code, dormant and
+re-enablable (see "Security & data handling"). Rationale: a free,
+top-of-funnel tool converts far better without a name/email wall.
 
 ### Phase 5 (complete)
 
