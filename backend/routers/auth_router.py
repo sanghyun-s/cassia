@@ -174,6 +174,8 @@ def _check_username_available(username: Optional[str]) -> None:
 
 @router.post("/signup", response_model=SignupResponse)
 def signup(body: SignupRequest, response: Response):
+    # CASSIA_NOLOGIN_ANON: endpoint retired (no-login mode)
+    raise HTTPException(status_code=status.HTTP_410_GONE, detail="Accounts are disabled")
     """
     Create a new user account. Requires the invite code.
 
@@ -237,6 +239,8 @@ def signup(body: SignupRequest, response: Response):
 
 @router.post("/login", response_model=LoginResponse)
 def login(body: LoginRequest, response: Response):
+    # CASSIA_NOLOGIN_ANON: endpoint retired (no-login mode)
+    raise HTTPException(status_code=status.HTTP_410_GONE, detail="Accounts are disabled")
     """
     Authenticate with email-OR-username + password.
 
@@ -294,6 +298,8 @@ def login(body: LoginRequest, response: Response):
 
 @router.post("/logout", response_model=LogoutResponse)
 def logout(request: Request, response: Response):
+    # CASSIA_NOLOGIN_ANON: endpoint retired (no-login mode)
+    raise HTTPException(status_code=status.HTTP_410_GONE, detail="Accounts are disabled")
     """
     Delete the current session server-side and clear the cookie.
 
@@ -312,6 +318,7 @@ def logout(request: Request, response: Response):
 
 @router.get("/me", response_model=AuthMeResponse)
 def me(current_user: User = Depends(get_current_user)):
+    # CASSIA_NOLOGIN_ANON: current_user is now anonymous (no 401).
     """
     Return the currently authenticated user. 401 if not logged in.
 

@@ -329,7 +329,7 @@ textarea::placeholder{color:var(--dim)}
 <body>
 
 <!-- ── AUTH SCREEN (Phase 5b/c) ────────────────────────── -->
-<div class="auth-screen" id="authScreen">
+<div class="auth-screen" id="authScreen" style="display:none" data-cassia_nologin_anon="1">
   <div class="auth-card">
     <div class="auth-brand">
       <div class="auth-brand-icon">📊</div>
@@ -560,18 +560,13 @@ const PLOTLY_LAYOUT = {
 // Check auth first. If 401, show the login screen. If 200, show the
 // chat UI and load it.
 async function init() {
+  // CASSIA_NOLOGIN_ANON: no-login — always show the app. /auth/me returns an
+  // anonymous user (200); we tolerate any failure and show chat anyway.
   try {
     const r = await apiFetch('/auth/me');
-    if (r.ok) {
-      currentUser = await r.json();
-      await showChatUI();
-    } else {
-      showAuthScreen();
-    }
-  } catch (e) {
-    // Network failure — show auth screen anyway so the user can retry.
-    showAuthScreen();
-  }
+    if (r.ok) { currentUser = await r.json(); }
+  } catch (e) { /* ignore — anonymous */ }
+  await showChatUI();
 }
 
 function showAuthScreen() {
@@ -841,12 +836,8 @@ async function loadSessions() {
       apiFetch('/core/topics'),
     ]);
 
-    // If we got 401 here, the cookie expired — flush back to login.
-    if (sessRes.status === 401 || topRes.status === 401) {
-      currentUser = null;
-      showAuthScreen();
-      return;
-    }
+    // CASSIA_NOLOGIN_ANON: no-login — 401 no longer bounces to a login screen.
+    // (Endpoints are anon-scoped; this branch is intentionally inert.)
 
     const sessData = await sessRes.json();
     let topData = { topics: [] };
@@ -2464,6 +2455,13 @@ document.addEventListener('keydown', (e) => {
 });
 
 init();
+</script>
+
+<!-- CASSIA_NOLOGIN_ANON: functional-cookie notice (dismissible, non-blocking) -->
+<div id="cookieNotice" style="position:fixed;left:16px;bottom:16px;max-width:340px;background:#161b22;color:#c9d1d9;border:1px solid #30363d;border-radius:10px;padding:12px 14px;font-size:12.5px;line-height:1.5;z-index:9999;box-shadow:0 6px 24px rgba(0,0,0,.35);display:none">CASSIA uses one functional cookie to keep your chats and saved work in this browser. No account, no tracking.<div style="margin-top:8px;text-align:right"><button onclick="dismissCookieNotice()" style="background:#1f5f63;color:#fff;border:none;border-radius:6px;padding:5px 14px;font-size:12.5px;cursor:pointer">OK</button></div></div>
+<script>
+function dismissCookieNotice(){var n=document.getElementById("cookieNotice");if(n)n.style.display="none";try{document.cookie="cassia_notice=1;path=/;max-age=31536000";}catch(e){}}
+window.addEventListener("load",function(){try{if(document.cookie.indexOf("cassia_notice=1")===-1){var n=document.getElementById("cookieNotice");if(n)n.style.display="block";}}catch(e){}});
 </script>
 </body>
 </html>
