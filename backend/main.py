@@ -60,7 +60,8 @@ from dotenv import load_dotenv
 
 from langchain_openai import ChatOpenAI
 
-from auth import User, get_current_user
+from auth import (User, get_current_user, COOKIE_NAME,
+                  mint_anon_token, set_session_cookie)
 from routers.query_router  import classify_question
 from routers.upload_router import router as upload_router
 from routers.auth_router   import router as auth_router
@@ -189,10 +190,8 @@ async def lifespan(app: FastAPI):
     else:
         print("  ✓ OpenAI API key loaded")
 
-    if not os.getenv("SIGNUP_INVITE_CODE"):
-        print("  ⚠ SIGNUP_INVITE_CODE not set — signup will be disabled")
-    else:
-        print("  ✓ Invite code configured")
+    # SIGNUP_INVITE_CODE is optional in no-login mode (signup is retired).
+    print("  • Signup disabled (no-login mode) — SIGNUP_INVITE_CODE not required")
 
     print(f"  {'✓' if DB_PATH.exists()    else '⚠'} accounting.db  {'found' if DB_PATH.exists()    else 'NOT found'}")
     print(f"  {'✓' if CHROMA_DIR.exists() else '⚠'} chroma_db     {'found' if CHROMA_DIR.exists() else 'NOT found'}")
@@ -236,6 +235,22 @@ app.add_middleware(
 
 app.include_router(upload_router)
 app.include_router(auth_router)
+
+# ── CASSIA_NOLOGIN_ANON: ensure every browser carries an anon identity cookie ──
+# The cookie value scopes this visitor's sessions/saves/Core. We mint one
+# on first visit and (re)set it so it survives; identity is read from it
+# by auth._resolve_current_user. HttpOnly/SameSite/Secure come from
+# set_session_cookie (Secure is env-driven via COOKIE_SECURE).
+@app.middleware("http")
+async def _ensure_anon_cookie(request, call_next):
+    response = await call_next(request)
+    try:
+        if not request.cookies.get(COOKIE_NAME):
+            set_session_cookie(response, mint_anon_token())
+    except Exception:
+        pass
+    return response
+
 
 static_dir = PROJECT_ROOT / "backend" / "static"
 static_dir.mkdir(exist_ok=True)

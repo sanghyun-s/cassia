@@ -167,39 +167,52 @@ async def get_current_user_optional(request: Request) -> Optional[User]:
     return await _resolve_current_user(request)
 
 
+# ── CASSIA_NOLOGIN_ANON: anonymous per-browser identity ──────────────
+# Option B (no-login): the cookie value is a per-browser token. If it
+# matches a real auth_sessions row (legacy account), we honor that;
+# otherwise the token itself IS the anonymous identity. A visitor is
+# never rejected — get_current_user no longer 401s for normal traffic.
+ANON_PREFIX = "anon_"
+
+def _anon_user_from_token(token: str) -> "User":
+    """Build a stable anonymous User from a browser cookie token."""
+    uid = token if token.startswith(ANON_PREFIX) else ANON_PREFIX + token
+    return User(user_id=uid, email="", username="guest", is_admin=False)
+
+def mint_anon_token() -> str:
+    """A fresh anonymous token (reuses the session-token generator)."""
+    return ANON_PREFIX + generate_session_token()
+
 async def _resolve_current_user(request: Request) -> Optional[User]:
-    """Shared implementation. Returns User or None — never raises."""
+    """
+    No-login resolver. Order:
+      1. If the cookie matches a valid account session → real User (legacy).
+      2. Else if any cookie token is present → anonymous User from it.
+      3. Else None (first visit before the middleware sets a cookie).
+    Never raises.
+    """
     token = request.cookies.get(COOKIE_NAME)
     if not token:
         return None
-
-    sess = get_auth_session_by_token(token)
-    if not sess:
-        return None
-
-    # Server-side expiry check (defensive — the DB query also filters)
-    expires_at = _parse_iso(sess.get("expires_at"))
-    if expires_at and expires_at < datetime.now(timezone.utc):
-        return None
-
-    user_row = get_user_by_id(sess["user_id"])
-    if not user_row:
-        return None
-
-    # Sliding renewal — debounced to avoid hammering the DB
-    last_seen = _parse_iso(sess.get("last_seen_at"))
-    now       = datetime.now(timezone.utc)
-    if (last_seen is None
-            or (now - last_seen) > timedelta(minutes=TOUCH_DEBOUNCE_MINUTES)):
-        new_expiry = expiry_from_now()
-        try:
-            touch_auth_session(token, new_expiry.isoformat())
-        except Exception:
-            # Non-fatal — auth still succeeds even if the touch write fails
-            pass
-
-    return _user_row_to_model(user_row)
-
+    # 1) Legacy real-account path (kept intact; dormant once signup is off).
+    if not token.startswith(ANON_PREFIX):
+        sess = get_auth_session_by_token(token)
+        if sess:
+            expires_at = _parse_iso(sess.get("expires_at"))
+            if not (expires_at and expires_at < datetime.now(timezone.utc)):
+                user_row = get_user_by_id(sess["user_id"])
+                if user_row:
+                    last_seen = _parse_iso(sess.get("last_seen_at"))
+                    now = datetime.now(timezone.utc)
+                    if (last_seen is None or (now - last_seen)
+                            > timedelta(minutes=TOUCH_DEBOUNCE_MINUTES)):
+                        try:
+                            touch_auth_session(token, expiry_from_now().isoformat())
+                        except Exception:
+                            pass
+                    return _user_row_to_model(user_row)
+    # 2) Anonymous identity — the token itself scopes this browser.
+    return _anon_user_from_token(token)
 
 def _parse_iso(value: Optional[str]) -> Optional[datetime]:
     """Parse an ISO 8601 string; return None on failure."""
