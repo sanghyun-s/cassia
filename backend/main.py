@@ -159,7 +159,7 @@ def _ensure_seed_data():
 async def lifespan(app: FastAPI):
     print("\n" + "═" * 52)
     print("  CASSIA — Accounting AI Chatbot")
-    print("  v2.12.1 · Phase 5b/c (auth-required)")
+    print("  v2.12.1 · no-login · anonymous workspace")  # CASSIA_NOLOGIN_DOCS
     print("═" * 52)
 
     try:

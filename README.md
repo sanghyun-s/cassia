@@ -5,8 +5,11 @@
 An AI accounting assistant that answers plain-English questions about both
 unstructured documents (IRS publications, uploaded PDFs) and structured
 financial data (QuickBooks-style exports), with persistent multi-session
-chat, per-session file uploads, semantic recall of saved answers, and
-invite-only multi-user authentication with per-user data isolation.
+chat, per-session file uploads, and semantic recall of saved answers.
+It runs with **no login** — each browser gets a private, anonymous
+workspace (no account, no email). The multi-user account system
+(bcrypt sign-in, per-user isolation) is retained in the codebase but
+dormant, and can be re-enabled.
 
 **Positioning:** a chat-based accounting *support* workspace for small-business
 follow-up work — client questions, agency notices, and follow-up tasks (the
@@ -166,7 +169,7 @@ Ask plain-English questions and get answers grounded in real data.
 ### Setup
 
 ```bash
-git clone https://github.com/sanghyun-s/accounting-ai-chatbot.git cassia
+git clone https://github.com/sanghyun-s/cassia.git
 cd cassia
 
 python3 -m venv venv
@@ -177,9 +180,9 @@ pip install 'passlib[bcrypt]>=1.7.4' 'bcrypt>=4.0.1,<5.0.0'
 cp .env.example .env
 # Edit .env and set:
 #   OPENAI_API_KEY=sk-...
-#   SIGNUP_INVITE_CODE=<choose-your-own>
+#   SIGNUP_INVITE_CODE=<optional — only if you re-enable accounts>
 #   SESSION_LIFETIME_DAYS=30
-#   COOKIE_SECURE=false
+#   COOKIE_SECURE=false   # true in production (HTTPS)
 ```
 
 ### One-time data preparation
@@ -198,9 +201,9 @@ python3 rag/phase1_ingest.py
 python3 backend/main.py
 ```
 
-Open `http://localhost:8002` — the login screen appears. Sign up with your
-chosen invite code; the first real signup automatically claims any
-pre-existing demo data.
+Open `http://localhost:8002` — CASSIA opens straight to the chat workspace.
+There is no login: each browser is given a private anonymous identity, and
+your sessions, saves, and Core persist for that browser.
 
 The startup banner shows green checkmarks for each subsystem. If any
 appear as warnings (⚠), the message tells you what's missing.
@@ -359,7 +362,7 @@ automate this pattern with all-or-nothing semantics and idempotent re-runs.
 
 ### Versioning in the banner
 
-The startup banner always shows the current version (e.g. `v2.12.1 · Phase 5b/c (auth-required)`)
+The startup banner always shows the current version (e.g. `v2.12.1 · no-login · anonymous workspace`)
 so a glance at the terminal tells you which generation of the code is running.
 
 ---
@@ -441,9 +444,21 @@ of design conversations and trade-off decisions.
 <!-- CASSIA_SECURITY_MODEL -->
 ## Security & data handling
 
-CASSIA's current security model is **single-user workspace isolation**. It is
-designed for one authenticated user per account working with their own
-materials; it is not (yet) a multi-tenant team product.
+CASSIA's deployed security model is **no-login, anonymous per-browser
+isolation**. There are no accounts: on first visit the server issues an
+anonymous identity in a functional cookie, and every session, save, upload,
+and vector is scoped to that browser identity. It is not a multi-tenant team
+product.
+
+<!-- CASSIA_NOLOGIN_DOCS -->
+> **Dormant account system.** The full Phase 5 authentication stack — bcrypt
+> password hashing, server-side session cookies, invite-only signup, and
+> per-user (`user_id`) data isolation — remains in the codebase but is turned
+> **off** for the free, no-login deployment: `/auth/signup`, `/auth/login`,
+> and `/auth/logout` return `410 Gone`, and the identity dependency yields an
+> anonymous user instead of requiring a session. It can be re-enabled without
+> a rewrite. The subsections below describe that account model, which is why
+> they still refer to authenticated per-account users.
 
 ### Implemented today
 
