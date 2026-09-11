@@ -1832,6 +1832,31 @@ function _p1SelectChartColumns(columns, rows) {
   return keep;
 }
 
+// CASSIA_CHART_POLISH: humanize a column name for axis titles (display-only).
+function _p1Humanize(col) {
+  if (col == null) return '';
+  let s = String(col)
+    .replace(/_/g, ' ')
+    .replace(/\b(ytd)\b/gi, 'YTD')
+    .replace(/\b(ar|ap|id|sql)\b/gi, m => m.toUpperCase());
+  // Title-case the remaining lowercase words.
+  s = s.replace(/\b([a-z])(\w*)/g, (m, a, b) => a.toUpperCase() + b);
+  return s.trim();
+}
+// CASSIA_CHART_POLISH: currency-ish formatter for on-bar value labels.
+function _p1FmtVal(v) {
+  const n = Number(v);
+  if (!isFinite(n)) return '';
+  return '$' + Math.round(n).toLocaleString('en-US');
+}
+// CASSIA_CHART_XAXIS: shorten a category label for DISPLAY only (tick text). The
+// trace's underlying x value stays the full name (hover shows it in full).
+function _p1ShortLabel(s) {
+  let out = String(s == null ? '' : s).trim();
+  // Strip one trailing noise word accountants read as redundant on an axis.
+  out = out.replace(/\s+(Revenue|Income|Expense|Expenses|Services)\s*$/i, '').trim();
+  return out || String(s == null ? '' : s);
+}
 function renderChart(chartType, columns, rows, question) {
   if (!rows || !rows.length || !columns || !columns.length) return null;
 
@@ -1857,7 +1882,9 @@ function renderChart(chartType, columns, rows, question) {
 
   let traces = [];
   let layout  = JSON.parse(JSON.stringify(PLOTLY_LAYOUT));
-  layout.title = { text: question.slice(0,60), font: { color: '#8b949e', size: 12 } };
+  // CASSIA_CHART_POLISH: no chart title — the question already appears above the chart,
+  // and a truncated raw-question title reads as broken in a clip.
+  layout.title = undefined;
   const _p1LooksDate = s => /^\d{4}-\d{1,2}-\d{1,2}/.test(String(s == null ? '' : s).trim());
   const _p1xIsDate = labels.length > 0 && (labels.filter(_p1LooksDate).length / labels.length) > 0.6;
 
@@ -1909,14 +1936,34 @@ function renderChart(chartType, columns, rows, question) {
         hovertemplate: `${col}: %{y:,.0f}<extra></extra>`,
       }));
     } else {
-      traces = [{ type: 'bar', x: labels, y: values,
+      // CASSIA_CHART_POLISH: name the series (kills 'trace 0'), add outside value
+      // labels for silent-video legibility (incl. $0 rows), hide legend.
+      traces = [{ type: 'bar', name: _p1Humanize(valueCol), x: labels, y: values,
+                  text: values.map(_p1FmtVal), textposition: 'outside',
+                  cliponaxis: false,
+                  textfont: { color: '#e6edf3', size: 11 },
                   marker: { color: '#58a6ff' },
                   hovertemplate: '%{x}: %{y:,.0f}<extra></extra>' }];
+      layout.showlegend = false;
     }
   }
 
   if (chartType !== 'pie') {
-    layout.xaxis = Object.assign({}, layout.xaxis, { type: _p1xIsDate ? 'date' : 'category' });
+    // CASSIA_CHART_XAXIS: y-axis keeps its value title; x-axis drops the (redundant,
+    // colliding) category title and shows shortened, non-truncating ticks.
+    const _xIsCategory = !_p1xIsDate;
+    const _xExtra = { type: _p1xIsDate ? 'date' : 'category' };
+    if (_xIsCategory) {
+      _xExtra.tickvals = labels;
+      _xExtra.ticktext = labels.map(_p1ShortLabel);
+      _xExtra.tickangle = 0;
+      _xExtra.automargin = true;
+    }
+    layout.xaxis = Object.assign({}, layout.xaxis, _xExtra);
+    layout.yaxis = Object.assign({}, layout.yaxis,
+      { title: { text: _p1Humanize(valueCol), font: { color: '#8b949e', size: 11 } } });
+    // Headroom so outside value labels aren't clipped at the top.
+    layout.margin = Object.assign({}, layout.margin, { t: 28 });
   }
 
   setTimeout(() => {
